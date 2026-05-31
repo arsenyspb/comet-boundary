@@ -1,0 +1,51 @@
+# Devin Environment Configuration for Comet Boundary
+# This file defines the lifecycle and operational capabilities for Devin.
+
+initialize:
+  run: |
+    # 1. System Dependencies (Linux/Debian based for Devin)
+    sudo apt-get update
+    sudo apt-get install -y jq curl make build-essential
+
+    # 2. Go (Backend)
+    # Devin usually has Go, but we ensure it's available or use the system default
+    if ! command -v go >/dev/null; then
+      sudo apt-get install -y golang
+    fi
+
+    # 3. Node.js (Frontend)
+    if ! command -v node >/dev/null; then
+      curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+      sudo apt-get install -y nodejs
+    fi
+
+    # 4. Initialize the environment
+    make deps
+    make setup
+
+startup:
+  run: |
+    # Established the verified demo environment
+    make start
+    make verify
+
+knowledge:
+  recipes:
+    - name: verify
+      description: "Run full system verification checks"
+      run: "make verify"
+    - name: clean-replay
+      description: "Completely reset the environment to a clean state"
+      run: "make replay"
+    - name: backend-logs
+      description: "Tail the backend proxy logs"
+      run: "docker logs comet-boundary-backend-1"
+    - name: frontend-logs
+      description: "Tail the frontend application logs"
+      run: "docker logs comet-boundary-frontend-1"
+
+maintenance:
+  run: |
+    # Ensure dependencies are tidy
+    cd server && go mod tidy
+    cd client && npm install
