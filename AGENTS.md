@@ -55,6 +55,13 @@ make replay
 
 ---
 
+## 🏛️ Architectural Alignment
+
+### HashiCorp Validated Designs (HVD)
+This project strictly follows HVD best practices for Boundary and Vault. All agents **MUST** reference the documentation in `docs/hvd/` when making architectural decisions or proposing infrastructure changes.
+
+---
+
 ## 🤖 Model-Specific Tips
 
 - **Devin:** See `.devin/environment.yaml` for VM initialization steps.

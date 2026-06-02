@@ -13,6 +13,9 @@ This file provides Gemini-specific strategies for operating within this reposito
 - **Surgical Edits:** Favor the `replace` tool over `write_file` for existing components to minimize token usage.
 - **Sequential Dependencies:** If a tool depends on the side-effect of a previous one (e.g., `make setup` before `make start`), set `wait_for_previous: true`.
 
+### 3. Architectural Standards
+- **HVD Alignment:** All planning, architectural decisions, and infrastructure implementations MUST align with HashiCorp Validated Designs. Before proposing changes or writing configuration, you MUST read the relevant guides in `docs/hvd/` and validate your approach against them.
+
 ---
 
 ## 🚀 First-Run Access
