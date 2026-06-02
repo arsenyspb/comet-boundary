@@ -218,7 +218,7 @@ func setupRouter() *chi.Mux {
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Boundary-Token"},
 		AllowCredentials: true,
 	}))
 
@@ -279,7 +279,7 @@ func setupRouter() *chi.Mux {
 	})
 
 	r.Post("/sessions/authorize", func(w http.ResponseWriter, r *http.Request) {
-		token := r.Header.Get("Authorization")
+		token := r.Header.Get("X-Boundary-Token")
 		if token == "" {
 			http.Error(w, "Missing token", http.StatusUnauthorized)
 			return

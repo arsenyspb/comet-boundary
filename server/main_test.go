@@ -31,7 +31,7 @@ func TestAuthorizeSession_InvalidTargetID(t *testing.T) {
 		"target_id": "invalid_id",
 	})
 	req, _ := http.NewRequest("POST", ts.URL+"/sessions/authorize", bytes.NewBuffer(reqBody))
-	req.Header.Set("Authorization", "test-token")
+	req.Header.Set("X-Boundary-Token", "test-token")
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
