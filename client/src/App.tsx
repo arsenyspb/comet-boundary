@@ -56,7 +56,7 @@ const App: React.FC = () => {
       const resp = await axios.post(
         `/sessions/authorize`,
         { target_id: targetId },
-        { headers: { Authorization: token } }
+        { headers: { 'X-Boundary-Token': token } }
       );
       console.log('Authorization successful:', resp.data);
       setSession({

@@ -9,6 +9,7 @@ export default defineConfig({
     tailwindcss(),
   ],
   server: {
+    allowedHosts: true,
     proxy: {
       '/auth': {
         target: 'http://backend:8080',
