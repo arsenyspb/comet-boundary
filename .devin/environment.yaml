@@ -54,6 +54,12 @@ knowledge:
         is set in client/vite.config.ts before exposing.
         Tunnel proxies (e.g. Traefik) use the Authorization header for Basic Auth,
         so the app must use a custom header (X-Boundary-Token) for its own tokens.
+        CAVEAT — Boundary Admin UI (port 9200): The tunnel URL embeds Basic Auth
+        credentials in the URL (user:token@host). The Boundary Ember app uses the
+        Fetch API, which rejects requests when the origin includes credentials
+        (per the Fetch spec). This affects any SPA using fetch() behind a Basic Auth
+        tunnel. Workaround: use the Devin Desktop tab to access localhost:9200
+        directly, or set up a cookie-based auth proxy in front of port 9200.
 
 maintenance:
   run: |
