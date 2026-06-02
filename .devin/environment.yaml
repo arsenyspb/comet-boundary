@@ -43,6 +43,17 @@ knowledge:
     - name: frontend-logs
       description: "Tail the frontend application logs"
       run: "docker logs comet-boundary-frontend-1"
+  notes:
+    - name: expose-demo-ports
+      description: |
+        When running a demo session, ALWAYS expose BOTH ports publicly:
+          1. Port 5173 — Comet Boundary frontend (React app)
+          2. Port 9200 — Boundary Admin UI (HashiCorp Boundary console)
+        Use `deploy expose port <PORT>` for each. Both require user approval.
+        Vite 6+ blocks unknown hostnames — ensure `server.allowedHosts: true`
+        is set in client/vite.config.ts before exposing.
+        Tunnel proxies (e.g. Traefik) use the Authorization header for Basic Auth,
+        so the app must use a custom header (X-Boundary-Token) for its own tokens.
 
 maintenance:
   run: |
