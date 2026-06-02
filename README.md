@@ -112,6 +112,34 @@ This command performs the following sequence:
 - **UI Login:** Pre-filled automatically via Vite environment variables. If fields are empty, check `client/.env.local`.
 - **Boundary API:** Accessible at [http://localhost:9200](http://localhost:9200).
 
+## Known Limitations — Hermetic VM Exposure
+
+When running the demo on a hermetic (headless) VM and exposing ports via a tunnel service (e.g. Traefik, Cloudflare Tunnel, or Devin's `deploy expose`), be aware of the following:
+
+### Tunnel Basic Auth breaks SPA Fetch API calls
+
+Most tunnel services authenticate external access by embedding HTTP Basic Auth credentials in the URL (`https://user:token@tunnel-host`). This works for simple page serving but **breaks any Single-Page Application that uses the Fetch API** — the [Fetch specification](https://fetch.spec.whatwg.org/#concept-request-url) rejects requests when the page's origin URL includes credentials.
+
+**Affected:** The Boundary Admin UI (port 9200) is an Ember.js SPA — it shows "ERROR" when accessed through a Basic Auth tunnel because its `/v1/...` API calls are rejected by the browser.
+
+**Not affected:** The Comet Boundary frontend (port 5173) works through tunnels because it uses Vite's server-side proxy for API calls (the browser never makes cross-origin fetch requests directly).
+
+### Recommended development approaches
+
+| Approach | Boundary UI | Comet Frontend | Notes |
+|----------|-------------|----------------|-------|
+| **Mac-bound development** (preferred) | `localhost:9200` | `localhost:5173` | Full access to all services. Run `make replay` locally. |
+| **VNC / Remote Desktop** | `localhost:9200` via VNC | `localhost:5173` via VNC | Access VM desktop directly. No tunnel auth conflicts. |
+| **Tunnel exposure** | Not functional (Fetch API limitation) | Functional (with `allowedHosts: true`) | Only the Comet frontend works through tunnels. |
+
+### Vite host allowlisting
+
+Vite 6+ blocks requests from unrecognized hostnames. When exposing the frontend via a tunnel, set `server.allowedHosts: true` in `client/vite.config.ts` or the dev server will return `403 Blocked request`.
+
+### Tunnel proxy Authorization header conflict
+
+Tunnel proxies that use HTTP Basic Auth intercept the `Authorization` header at the proxy level. If the application sends its own tokens via `Authorization`, the proxy will reject them with `401`. Use a custom header (e.g. `X-Boundary-Token`) to avoid the conflict.
+
 ## Roadmap
 - **Slice 2:** RDP integration via Apache Guacamole (`guacd`).
 - **Identity:** Transition from password injection to SAML/OIDC/SSO.

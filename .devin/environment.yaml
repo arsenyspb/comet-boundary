@@ -54,12 +54,21 @@ knowledge:
         is set in client/vite.config.ts before exposing.
         Tunnel proxies (e.g. Traefik) use the Authorization header for Basic Auth,
         so the app must use a custom header (X-Boundary-Token) for its own tokens.
-        CAVEAT — Boundary Admin UI (port 9200): The tunnel URL embeds Basic Auth
-        credentials in the URL (user:token@host). The Boundary Ember app uses the
-        Fetch API, which rejects requests when the origin includes credentials
-        (per the Fetch spec). This affects any SPA using fetch() behind a Basic Auth
-        tunnel. Workaround: use the Devin Desktop tab to access localhost:9200
-        directly, or set up a cookie-based auth proxy in front of port 9200.
+    - name: hermetic-vm-limitations
+      description: |
+        KNOWN LIMITATION: Tunnel Basic Auth breaks SPA Fetch API calls.
+        Tunnel services embed credentials in the URL (user:token@host). The Fetch
+        spec rejects requests when the origin includes credentials. This breaks
+        the Boundary Admin UI (Ember.js SPA on port 9200) but NOT the Comet
+        frontend (port 5173, which uses Vite's server-side proxy).
+        
+        Preferred development approaches (in order):
+          1. Mac-bound development — run `make replay` locally, access localhost.
+          2. VNC / Remote Desktop — access the VM desktop directly, no tunnel issues.
+          3. Tunnel exposure — only the Comet frontend (port 5173) works. For the
+             Boundary UI, use the Devin Desktop tab to view localhost:9200.
+        
+        See README.md "Known Limitations — Hermetic VM Exposure" for full details.
 
 maintenance:
   run: |
