@@ -11,6 +11,9 @@ jobs:
       github.event.label.name == 'devin-engineer' && 
       github.event.sender.login == 'arsenyspb'
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
     steps:
       - name: Checkout Orchestrator
         uses: actions/checkout@v4
