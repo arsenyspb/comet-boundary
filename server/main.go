@@ -193,8 +193,9 @@ func handleSSH(w http.ResponseWriter, r *http.Request) {
 }
 
 type AuthRequest struct {
-	LoginName string `json:"login_name"`
-	Password  string `json:"password"`
+	LoginName    string `json:"login_name"`
+	Password     string `json:"password"`
+	AuthMethodID string `json:"auth_method_id,omitempty"`
 }
 
 type AuthResponse struct {
@@ -251,6 +252,11 @@ func setupRouter() *chi.Mux {
 			return
 		}
 
+		effectiveAuthMethodID := authMethodID
+		if req.AuthMethodID != "" {
+			effectiveAuthMethodID = req.AuthMethodID
+		}
+
 		client, err := api.NewClient(&api.Config{Addr: boundaryAddr})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -263,7 +269,7 @@ func setupRouter() *chi.Mux {
 			"password":   req.Password,
 		}
 
-		result, err := amClient.Authenticate(r.Context(), authMethodID, "login", params)
+		result, err := amClient.Authenticate(r.Context(), effectiveAuthMethodID, "login", params)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return

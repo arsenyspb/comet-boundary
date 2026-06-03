@@ -77,25 +77,129 @@ fi
 
 echo "Created Target ID: $TARGET_ID"
 
-# 5. Synchronize .env
+# 5. Configure LDAP Auth Method
+echo "Waiting for OpenLDAP to be ready..."
+LDAP_RETRIES=0
+until docker exec comet-boundary-openldap-1 ldapsearch -x -H ldap://localhost -b "dc=comet,dc=local" -D "cn=admin,dc=comet,dc=local" -w admin > /dev/null 2>&1; do
+    printf '.'
+    sleep 2
+    LDAP_RETRIES=$((LDAP_RETRIES+1))
+    if [ $LDAP_RETRIES -ge $MAX_RETRIES ]; then
+        echo "\nTimeout waiting for OpenLDAP."
+        exit 1
+    fi
+done
+echo "\nOpenLDAP is healthy."
+
+# Discover the Org scope ID
+ORG_ID=$(docker exec -e BOUNDARY_TOKEN=$TOKEN comet-boundary-controller-1 boundary scopes list -format json -token env://BOUNDARY_TOKEN | jq -r '.items[] | select(.scope.id=="global") | .id' | head -n 1)
+
+if [ -z "$ORG_ID" ] || [ "$ORG_ID" = "null" ]; then
+    echo "Failed to discover Org scope ID."
+    exit 1
+fi
+echo "Discovered Org ID: $ORG_ID"
+
+echo "Creating LDAP Auth Method..."
+LDAP_AUTH_METHOD_ID=$(docker exec -e BOUNDARY_TOKEN=$TOKEN comet-boundary-controller-1 boundary auth-methods create ldap \
+    -name "Comet LDAP" \
+    -description "OpenLDAP identity provider for Comet engineers" \
+    -scope-id "$ORG_ID" \
+    -urls "ldap://openldap:389" \
+    -user-dn "ou=People,dc=comet,dc=local" \
+    -user-attr "uid" \
+    -group-dn "ou=Groups,dc=comet,dc=local" \
+    -bind-dn "cn=admin,dc=comet,dc=local" \
+    -bind-password "admin" \
+    -state "active-public" \
+    -enable-groups \
+    -discover-dn \
+    -token env://BOUNDARY_TOKEN \
+    -format json | jq -r .item.id)
+
+if [ -z "$LDAP_AUTH_METHOD_ID" ] || [ "$LDAP_AUTH_METHOD_ID" = "null" ]; then
+    echo "Failed to create LDAP Auth Method."
+    exit 1
+fi
+echo "Created LDAP Auth Method ID: $LDAP_AUTH_METHOD_ID"
+
+# 6. Create Managed Group for 'engineering'
+echo "Creating Managed Group for 'engineering' LDAP group..."
+MANAGED_GROUP_ID=$(docker exec -e BOUNDARY_TOKEN=$TOKEN comet-boundary-controller-1 boundary managed-groups create ldap \
+    -auth-method-id "$LDAP_AUTH_METHOD_ID" \
+    -name "Engineering Team" \
+    -description "Managed group mapped to LDAP engineering group" \
+    -group-names "engineering" \
+    -token env://BOUNDARY_TOKEN \
+    -format json | jq -r .item.id)
+
+if [ -z "$MANAGED_GROUP_ID" ] || [ "$MANAGED_GROUP_ID" = "null" ]; then
+    echo "Failed to create Managed Group."
+    exit 1
+fi
+echo "Created Managed Group ID: $MANAGED_GROUP_ID"
+
+# 7. Create Role granting Managed Group access to the SSH Target
+echo "Creating RBAC role for Engineering Managed Group..."
+ROLE_ID=$(docker exec -e BOUNDARY_TOKEN=$TOKEN comet-boundary-controller-1 boundary roles create \
+    -name "Engineering SSH Access" \
+    -description "Grants engineering team access to the SSH target" \
+    -scope-id "$PROJECT_ID" \
+    -token env://BOUNDARY_TOKEN \
+    -format json | jq -r .item.id)
+
+if [ -z "$ROLE_ID" ] || [ "$ROLE_ID" = "null" ]; then
+    echo "Failed to create role."
+    exit 1
+fi
+
+# Add managed group as principal
+docker exec -e BOUNDARY_TOKEN=$TOKEN comet-boundary-controller-1 boundary roles add-principals \
+    -id "$ROLE_ID" \
+    -principal "$MANAGED_GROUP_ID" \
+    -token env://BOUNDARY_TOKEN
+
+# Grant authorize-session on the target and read/list on targets
+docker exec -e BOUNDARY_TOKEN=$TOKEN comet-boundary-controller-1 boundary roles add-grants \
+    -id "$ROLE_ID" \
+    -grant "ids=$TARGET_ID;actions=authorize-session" \
+    -token env://BOUNDARY_TOKEN
+
+docker exec -e BOUNDARY_TOKEN=$TOKEN comet-boundary-controller-1 boundary roles add-grants \
+    -id "$ROLE_ID" \
+    -grant "ids=*;type=target;actions=list,read" \
+    -token env://BOUNDARY_TOKEN
+
+docker exec -e BOUNDARY_TOKEN=$TOKEN comet-boundary-controller-1 boundary roles add-grants \
+    -id "$ROLE_ID" \
+    -grant "ids=*;type=session;actions=list,read:self,cancel:self" \
+    -token env://BOUNDARY_TOKEN
+
+echo "RBAC configured: Engineering Managed Group -> SSH Target"
+
+# 8. Synchronize .env
 echo "Synchronizing .env..."
 cat <<EOF > .env
 BOUNDARY_ADDR=$BOUNDARY_ADDR
 BOUNDARY_AUTH_METHOD_ID=$BOUNDARY_AUTH_METHOD_ID
+BOUNDARY_LDAP_AUTH_METHOD_ID=$LDAP_AUTH_METHOD_ID
 BOUNDARY_ADMIN_USER=admin
 BOUNDARY_ADMIN_PASSWORD=$BOUNDARY_ADMIN_PASSWORD
 BOUNDARY_TARGET_ID=$TARGET_ID
 EOF
 
-# 6. Synchronize Frontend defaults (Inject via .env.local)
+# 9. Synchronize Frontend defaults (Inject via .env.local)
 echo "Synchronizing Frontend defaults..."
 cat <<EOF > client/.env.local
 VITE_ADMIN_USER=admin
 VITE_ADMIN_PASSWORD=$BOUNDARY_ADMIN_PASSWORD
 VITE_TARGET_ID=$TARGET_ID
+VITE_LDAP_AUTH_METHOD_ID=$LDAP_AUTH_METHOD_ID
 EOF
 
 echo "--------------------------------------------------"
 echo "Boundary initialization complete."
 echo "Target ID: $TARGET_ID"
+echo "LDAP Auth Method ID: $LDAP_AUTH_METHOD_ID"
+echo "Managed Group ID: $MANAGED_GROUP_ID"
 echo "--------------------------------------------------"

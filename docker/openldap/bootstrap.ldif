@@ -1,0 +1,27 @@
+# Organizational Units
+dn: ou=People,dc=comet,dc=local
+objectClass: organizationalUnit
+ou: People
+
+dn: ou=Groups,dc=comet,dc=local
+objectClass: organizationalUnit
+ou: Groups
+
+# User: alice
+dn: uid=alice,ou=People,dc=comet,dc=local
+objectClass: inetOrgPerson
+objectClass: posixAccount
+uid: alice
+cn: Alice Engineer
+sn: Engineer
+mail: alice@comet.local
+userPassword: changeme
+uidNumber: 1001
+gidNumber: 1001
+homeDirectory: /home/alice
+
+# Group: engineering
+dn: cn=engineering,ou=Groups,dc=comet,dc=local
+objectClass: groupOfNames
+cn: engineering
+member: uid=alice,ou=People,dc=comet,dc=local

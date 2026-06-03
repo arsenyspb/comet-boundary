@@ -20,11 +20,14 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
+type AuthMode = 'password' | 'ldap';
+
 const App: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [token, setToken] = useState('');
-  const [loginName, setLoginName] = useState(import.meta.env.VITE_ADMIN_USER || 'admin');
-  const [password, setPassword] = useState(import.meta.env.VITE_ADMIN_PASSWORD || '');
+  const [authMode, setAuthMode] = useState<AuthMode>('ldap');
+  const [loginName, setLoginName] = useState('');
+  const [password, setPassword] = useState('');
   const [targetId, setTargetId] = useState(import.meta.env.VITE_TARGET_ID || '');
   const [session, setSession] = useState<{ sessionId: string; authorizationToken: string } | null>(null);
   const [status, setStatus] = useState<string>('Ready');
@@ -33,12 +36,18 @@ const App: React.FC = () => {
   const xtermRef = useRef<Terminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
+  const ldapAuthMethodId = import.meta.env.VITE_LDAP_AUTH_METHOD_ID || '';
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus('Logging in...');
     setError(null);
     try {
-      const resp = await axios.post(`/auth/login`, { login_name: loginName, password });
+      const payload: Record<string, string> = { login_name: loginName, password };
+      if (authMode === 'ldap' && ldapAuthMethodId) {
+        payload.auth_method_id = ldapAuthMethodId;
+      }
+      const resp = await axios.post(`/auth/login`, payload);
       setToken(resp.data.token);
       setIsLoggedIn(true);
       setStatus('Logged in');
@@ -149,6 +158,22 @@ const App: React.FC = () => {
         <form onSubmit={handleLogin} className="p-8 bg-gray-800 rounded-lg shadow-xl w-96">
           <h2 className="text-2xl font-bold mb-6 text-center">Comet Boundary Login</h2>
           {error && <div className="mb-4 p-2 bg-red-900 border border-red-700 text-red-100 text-sm rounded">{error}</div>}
+          <div className="flex mb-6 rounded overflow-hidden border border-gray-600">
+            <button
+              type="button"
+              className={`flex-1 p-2 text-sm font-medium transition-colors ${authMode === 'ldap' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+              onClick={() => setAuthMode('ldap')}
+            >
+              LDAP
+            </button>
+            <button
+              type="button"
+              className={`flex-1 p-2 text-sm font-medium transition-colors ${authMode === 'password' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+              onClick={() => setAuthMode('password')}
+            >
+              Password
+            </button>
+          </div>
           <div className="mb-4">
             <label className="block text-sm font-medium mb-1">Username</label>
             <input
@@ -156,6 +181,7 @@ const App: React.FC = () => {
               className="w-full p-2 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={loginName}
               onChange={(e) => setLoginName(e.target.value)}
+              placeholder={authMode === 'ldap' ? 'LDAP username (e.g. alice)' : 'admin'}
             />
           </div>
           <div className="mb-6">
@@ -165,6 +191,7 @@ const App: React.FC = () => {
               className="w-full p-2 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              placeholder={authMode === 'ldap' ? 'LDAP password' : 'Boundary password'}
             />
           </div>
           <button
@@ -172,7 +199,7 @@ const App: React.FC = () => {
             disabled={status.includes('...')}
             className="w-full p-2 rounded bg-blue-600 hover:bg-blue-700 font-bold transition-colors disabled:opacity-50"
           >
-            {status.includes('...') ? status : 'Login'}
+            {status.includes('...') ? status : (authMode === 'ldap' ? 'Login with LDAP' : 'Login')}
           </button>
         </form>
       </div>
