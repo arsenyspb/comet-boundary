@@ -1,0 +1,34 @@
+name: Devin AI Engineer
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  launch-devin:
+    # FOOL-PROOFING: Only trigger if the label is 'devin-engineer' 
+    # AND the user who added the label is arsenyspb (logged in as arseny.chernov@gmail.com)
+    if: |
+      github.event.label.name == 'devin-engineer' && 
+      github.event.sender.login == 'arsenyspb'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Orchestrator
+        uses: actions/checkout@v4
+        with:
+          repository: arsenyspb/atobar-scb
+          path: orchestrator
+          token: ${{ secrets.ORG_CHECKOUT_TOKEN }}
+
+      - name: Run Devin Orchestrator
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          DEVIN_ORG_ID: ${{ secrets.DEVIN_ORG_ID }}
+          TARGET_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          cd orchestrator
+          docker build -t devin-orchestrator .
+          docker run             -e GITHUB_TOKEN             -e DEVIN_API_KEY             -e DEVIN_ORG_ID             -e TARGET_REPO             -e ISSUE_NUMBER             -e ISSUE_TITLE             -e ISSUE_BODY             devin-orchestrator
