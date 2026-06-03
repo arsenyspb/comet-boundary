@@ -20,11 +20,14 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
+type AuthMethodType = 'password' | 'ldap';
+
 const App: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [token, setToken] = useState('');
-  const [loginName, setLoginName] = useState(import.meta.env.VITE_ADMIN_USER || 'admin');
-  const [password, setPassword] = useState(import.meta.env.VITE_ADMIN_PASSWORD || '');
+  const [authMethod, setAuthMethod] = useState<AuthMethodType>('ldap');
+  const [loginName, setLoginName] = useState('');
+  const [password, setPassword] = useState('');
   const [targetId, setTargetId] = useState(import.meta.env.VITE_TARGET_ID || '');
   const [session, setSession] = useState<{ sessionId: string; authorizationToken: string } | null>(null);
   const [status, setStatus] = useState<string>('Ready');
@@ -33,12 +36,24 @@ const App: React.FC = () => {
   const xtermRef = useRef<Terminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
+  const getAuthMethodId = (): string | undefined => {
+    if (authMethod === 'ldap') {
+      return import.meta.env.VITE_LDAP_AUTH_METHOD_ID || undefined;
+    }
+    return import.meta.env.VITE_AUTH_METHOD_ID || undefined;
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus('Logging in...');
     setError(null);
     try {
-      const resp = await axios.post(`/auth/login`, { login_name: loginName, password });
+      const payload: Record<string, string> = { login_name: loginName, password };
+      const authMethodId = getAuthMethodId();
+      if (authMethodId) {
+        payload.auth_method_id = authMethodId;
+      }
+      const resp = await axios.post(`/auth/login`, payload);
       setToken(resp.data.token);
       setIsLoggedIn(true);
       setStatus('Logged in');
@@ -150,12 +165,32 @@ const App: React.FC = () => {
           <h2 className="text-2xl font-bold mb-6 text-center">Comet Boundary Login</h2>
           {error && <div className="mb-4 p-2 bg-red-900 border border-red-700 text-red-100 text-sm rounded">{error}</div>}
           <div className="mb-4">
+            <label className="block text-sm font-medium mb-1">Auth Method</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className={`flex-1 p-2 rounded text-sm font-medium transition-colors ${authMethod === 'ldap' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+                onClick={() => setAuthMethod('ldap')}
+              >
+                LDAP
+              </button>
+              <button
+                type="button"
+                className={`flex-1 p-2 rounded text-sm font-medium transition-colors ${authMethod === 'password' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+                onClick={() => setAuthMethod('password')}
+              >
+                Password
+              </button>
+            </div>
+          </div>
+          <div className="mb-4">
             <label className="block text-sm font-medium mb-1">Username</label>
             <input
               type="text"
               className="w-full p-2 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={loginName}
               onChange={(e) => setLoginName(e.target.value)}
+              placeholder={authMethod === 'ldap' ? 'alice' : 'admin'}
             />
           </div>
           <div className="mb-6">
@@ -172,7 +207,7 @@ const App: React.FC = () => {
             disabled={status.includes('...')}
             className="w-full p-2 rounded bg-blue-600 hover:bg-blue-700 font-bold transition-colors disabled:opacity-50"
           >
-            {status.includes('...') ? status : 'Login'}
+            {status.includes('...') ? status : `Login with ${authMethod === 'ldap' ? 'LDAP' : 'Password'}`}
           </button>
         </form>
       </div>

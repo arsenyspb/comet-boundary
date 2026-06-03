@@ -1,0 +1,31 @@
+# Organizational Units
+dn: ou=People,dc=comet,dc=local
+objectClass: organizationalUnit
+ou: People
+
+dn: ou=Groups,dc=comet,dc=local
+objectClass: organizationalUnit
+ou: Groups
+
+# User: alice (engineering team member)
+dn: uid=alice,ou=People,dc=comet,dc=local
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: alice
+sn: Engineer
+givenName: Alice
+cn: Alice Engineer
+displayName: Alice Engineer
+uidNumber: 10000
+gidNumber: 5000
+userPassword: alice-boundary-pass
+homeDirectory: /home/alice
+loginShell: /bin/bash
+mail: alice@comet.local
+
+# Group: engineering
+dn: cn=engineering,ou=Groups,dc=comet,dc=local
+objectClass: groupOfNames
+cn: engineering
+member: uid=alice,ou=People,dc=comet,dc=local

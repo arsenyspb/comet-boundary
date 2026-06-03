@@ -89,10 +89,16 @@ echo "\nPASS: Frontend is healthy (Docker verified)."
 
 # 6. Verify Credential Injection
 if [ -f client/.env.local ]; then
-    if grep -q "VITE_ADMIN_PASSWORD=$BOUNDARY_ADMIN_PASSWORD" client/.env.local; then
-        echo "PASS: Frontend .env.local is correctly synchronized."
+    if grep -q "VITE_TARGET_ID=$BOUNDARY_TARGET_ID" client/.env.local; then
+        echo "PASS: Frontend .env.local target ID is correctly synchronized."
     else
-        echo "FAIL: Frontend .env.local password mismatch."
+        echo "FAIL: Frontend .env.local target ID mismatch."
+        exit 1
+    fi
+    if grep -q "VITE_LDAP_AUTH_METHOD_ID=" client/.env.local; then
+        echo "PASS: Frontend .env.local has LDAP auth method ID."
+    else
+        echo "FAIL: Frontend .env.local missing LDAP auth method ID."
         exit 1
     fi
 else
@@ -100,6 +106,16 @@ else
     exit 1
 fi
 
+# 7. Verify LDAP Auth Method exists in .env
+if [ -n "$BOUNDARY_LDAP_AUTH_METHOD_ID" ]; then
+    echo "PASS: LDAP Auth Method ID is configured ($BOUNDARY_LDAP_AUTH_METHOD_ID)."
+else
+    echo "FAIL: LDAP Auth Method ID not found in .env."
+    exit 1
+fi
+
 echo "=== All checks passed! Demo is ready at http://localhost:5173 ==="
-echo "Credentials: admin / $BOUNDARY_ADMIN_PASSWORD"
+echo "Admin Auth Method ID: $BOUNDARY_AUTH_METHOD_ID"
+echo "LDAP Auth Method ID: $BOUNDARY_LDAP_AUTH_METHOD_ID"
 echo "Target ID: $BOUNDARY_TARGET_ID"
+echo "LDAP user 'alice' can log in with LDAP credentials."
