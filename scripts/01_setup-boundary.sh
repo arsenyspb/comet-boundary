@@ -115,6 +115,8 @@ LDAP_AUTH_METHOD_ID=$(curl -s -X POST \
             \"user_attr\": \"uid\",
             \"group_dn\": \"ou=groups,dc=comet,dc=example\",
             \"group_attr\": \"cn\",
+            \"group_filter\": \"(member={{.UserDN}})\",
+            \"enable_groups\": true,
             \"bind_dn\": \"cn=admin,dc=comet,dc=example\",
             \"bind_password\": \"admin\",
             \"state\": \"active-public\",
@@ -128,6 +130,19 @@ if [ -z "$LDAP_AUTH_METHOD_ID" ] || [ "$LDAP_AUTH_METHOD_ID" = "null" ]; then
     exit 1
 fi
 echo "Created LDAP Auth Method ID: $LDAP_AUTH_METHOD_ID"
+
+# Set LDAP as primary auth method for org scope (enables user auto-creation on first login)
+echo "Setting LDAP as primary auth method for org scope..."
+ORG_VERSION=$(curl -s -H "Authorization: Bearer $TOKEN" "$BOUNDARY_ADDR/v1/scopes/$ORG_ID" | jq -r '.version')
+curl -s -X PATCH \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"version\": $ORG_VERSION,
+        \"primary_auth_method_id\": \"$LDAP_AUTH_METHOD_ID\"
+    }" \
+    "$BOUNDARY_ADDR/v1/scopes/$ORG_ID" > /dev/null
+echo "LDAP set as primary auth method for org scope."
 
 # 6. Create LDAP Managed Group for 'engineering'
 echo "Creating Managed Group for 'engineering' LDAP group..."
