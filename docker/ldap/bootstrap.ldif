@@ -1,0 +1,31 @@
+# Organizational Units
+dn: ou=people,dc=comet,dc=example
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,dc=comet,dc=example
+objectClass: organizationalUnit
+ou: groups
+
+# User: alice (member of engineering)
+dn: uid=alice,ou=people,dc=comet,dc=example
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: alice
+sn: Engineer
+givenName: Alice
+cn: Alice Engineer
+displayName: Alice Engineer
+uidNumber: 10000
+gidNumber: 10000
+userPassword: changeme
+loginShell: /bin/bash
+homeDirectory: /home/alice
+mail: alice@comet.example
+
+# Group: engineering
+dn: cn=engineering,ou=groups,dc=comet,dc=example
+objectClass: groupOfNames
+cn: engineering
+member: uid=alice,ou=people,dc=comet,dc=example

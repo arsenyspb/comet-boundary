@@ -23,8 +23,9 @@ import '@xterm/xterm/css/xterm.css';
 const App: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [token, setToken] = useState('');
-  const [loginName, setLoginName] = useState(import.meta.env.VITE_ADMIN_USER || 'admin');
-  const [password, setPassword] = useState(import.meta.env.VITE_ADMIN_PASSWORD || '');
+  const [loginName, setLoginName] = useState('');
+  const [password, setPassword] = useState('');
+  const [authMethod, setAuthMethod] = useState<'ldap' | 'password'>('ldap');
   const [targetId, setTargetId] = useState(import.meta.env.VITE_TARGET_ID || '');
   const [session, setSession] = useState<{ sessionId: string; authorizationToken: string } | null>(null);
   const [status, setStatus] = useState<string>('Ready');
@@ -33,12 +34,18 @@ const App: React.FC = () => {
   const xtermRef = useRef<Terminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
+  const ldapAuthMethodId = import.meta.env.VITE_LDAP_AUTH_METHOD_ID || '';
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus('Logging in...');
     setError(null);
     try {
-      const resp = await axios.post(`/auth/login`, { login_name: loginName, password });
+      const payload: Record<string, string> = { login_name: loginName, password };
+      if (authMethod === 'ldap' && ldapAuthMethodId) {
+        payload.auth_method_id = ldapAuthMethodId;
+      }
+      const resp = await axios.post(`/auth/login`, payload);
       setToken(resp.data.token);
       setIsLoggedIn(true);
       setStatus('Logged in');
@@ -150,12 +157,24 @@ const App: React.FC = () => {
           <h2 className="text-2xl font-bold mb-6 text-center">Comet Boundary Login</h2>
           {error && <div className="mb-4 p-2 bg-red-900 border border-red-700 text-red-100 text-sm rounded">{error}</div>}
           <div className="mb-4">
+            <label className="block text-sm font-medium mb-1">Auth Method</label>
+            <select
+              className="w-full p-2 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={authMethod}
+              onChange={(e) => setAuthMethod(e.target.value as 'ldap' | 'password')}
+            >
+              <option value="ldap">LDAP</option>
+              <option value="password">Password (Admin)</option>
+            </select>
+          </div>
+          <div className="mb-4">
             <label className="block text-sm font-medium mb-1">Username</label>
             <input
               type="text"
               className="w-full p-2 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={loginName}
               onChange={(e) => setLoginName(e.target.value)}
+              placeholder={authMethod === 'ldap' ? 'e.g. alice' : 'e.g. admin'}
             />
           </div>
           <div className="mb-6">
