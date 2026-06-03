@@ -23,6 +23,11 @@ export default defineConfig({
         target: 'ws://backend:8080',
         ws: true,
       },
+      '/boundary': {
+        target: 'http://controller:9200',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/boundary/, ''),
+      },
     },
   },
 })

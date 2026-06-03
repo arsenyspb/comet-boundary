@@ -22,30 +22,6 @@ func TestRootHandler(t *testing.T) {
 	}
 }
 
-func TestAuthorizeSession_InvalidTargetID(t *testing.T) {
-	r := setupRouter()
-	ts := httptest.NewServer(r)
-	defer ts.Close()
-
-	reqBody, _ := json.Marshal(map[string]string{
-		"target_id": "invalid_id",
-	})
-	req, _ := http.NewRequest("POST", ts.URL+"/sessions/authorize", bytes.NewBuffer(reqBody))
-	req.Header.Set("X-Boundary-Token", "test-token")
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	res, err := client.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// This is expected to FAIL initially (RED) because main.go doesn't validate the prefix
-	if res.StatusCode != http.StatusBadRequest {
-		t.Errorf("Expected status BadRequest (400) for invalid target ID; got %v", res.Status)
-	}
-}
-
 func TestLogin_MissingCredentials(t *testing.T) {
 	r := setupRouter()
 	ts := httptest.NewServer(r)

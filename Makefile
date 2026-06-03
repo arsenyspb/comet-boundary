@@ -54,4 +54,6 @@ clean:
 	rm -f server.log client.log server/server_bin .env client/.env.local
 
 # Restart the application services without rebuilding infrastructure
-restart: stop start
+restart: stop
+	docker-compose up -d --build backend frontend
+	docker-compose up -d postgres openldap controller worker ssh-target

@@ -21,7 +21,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -31,7 +30,6 @@ import (
 	"github.com/hashicorp/boundary/api"
 	"github.com/hashicorp/boundary/api/authmethods"
 	apiproxy "github.com/hashicorp/boundary/api/proxy"
-	"github.com/hashicorp/boundary/api/targets"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -282,50 +280,6 @@ func setupRouter() *chi.Mux {
 		}
 
 		json.NewEncoder(w).Encode(AuthResponse{Token: token.Token})
-	})
-
-	r.Post("/sessions/authorize", func(w http.ResponseWriter, r *http.Request) {
-		token := r.Header.Get("X-Boundary-Token")
-		if token == "" {
-			http.Error(w, "Missing token", http.StatusUnauthorized)
-			return
-		}
-
-		var req SessionRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		if !strings.HasPrefix(req.TargetID, "ttcp_") {
-			http.Error(w, "Invalid Target ID format. Must start with 'ttcp_'", http.StatusBadRequest)
-			return
-		}
-
-		client, err := api.NewClient(&api.Config{Addr: boundaryAddr})
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		client.SetToken(token)
-
-		targetClient := targets.NewClient(client)
-		result, err := targetClient.AuthorizeSession(r.Context(), req.TargetID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		sa, err := result.GetSessionAuthorization()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(SessionResponse{
-			SessionID:          sa.SessionId,
-			AuthorizationToken: sa.AuthorizationToken,
-			Endpoint:           sa.Endpoint,
-		})
 	})
 
 	r.HandleFunc("/ws/ssh", handleSSH)

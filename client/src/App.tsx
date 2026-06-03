@@ -26,7 +26,8 @@ const App: React.FC = () => {
   const [loginName, setLoginName] = useState('');
   const [password, setPassword] = useState('');
   const [authMethod, setAuthMethod] = useState<'ldap' | 'password'>('ldap');
-  const [targetId, setTargetId] = useState(import.meta.env.VITE_TARGET_ID || '');
+  const [targets, setTargets] = useState<any[]>([]);
+  const [selectedTarget, setSelectedTarget] = useState<string>(import.meta.env.VITE_TARGET_ID || '');
   const [session, setSession] = useState<{ sessionId: string; authorizationToken: string } | null>(null);
   const [status, setStatus] = useState<string>('Ready');
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +36,39 @@ const App: React.FC = () => {
   const wsRef = useRef<WebSocket | null>(null);
 
   const ldapAuthMethodId = import.meta.env.VITE_LDAP_AUTH_METHOD_ID || '';
+
+  useEffect(() => {
+    if (isLoggedIn && token) {
+      fetchTargets();
+    }
+  }, [isLoggedIn, token]);
+
+  const fetchTargets = async () => {
+    setStatus('Discovering targets...');
+    console.log('Discovery: Fetching targets from /boundary/v1/targets?recursive=true&scope_id=global');
+    console.log('Discovery: Using token prefix:', token.substring(0, 10) + '...');
+    try {
+      const resp = await axios.get('/boundary/v1/targets?recursive=true&scope_id=global', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      console.log('Discovery: Success, found', resp.data.items?.length || 0, 'targets');
+      setTargets(resp.data.items || []);
+      setStatus('Targets discovered');
+    } catch (err: any) {
+      console.error('Discovery: Failed!');
+      if (err.response) {
+        console.error('Discovery Error Status:', err.response.status);
+        console.error('Discovery Error Data:', JSON.stringify(err.response.data, null, 2));
+        console.error('Discovery Error Headers:', JSON.stringify(err.response.headers, null, 2));
+      } else if (err.request) {
+        console.error('Discovery Error: No response received', err.request);
+      } else {
+        console.error('Discovery Error Message:', err.message);
+      }
+      setError(`Failed to discover targets: ${err.response?.data?.message || err.message}`);
+      setStatus('Error');
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,23 +91,30 @@ const App: React.FC = () => {
   };
 
   const handleConnect = async () => {
+    if (!selectedTarget) {
+      setError('Please select a target');
+      return;
+    }
     setStatus('Authorizing session...');
     setError(null);
     try {
+      // Authorize session DIRECTLY against Boundary
       const resp = await axios.post(
-        `/sessions/authorize`,
-        { target_id: targetId },
-        { headers: { 'X-Boundary-Token': token } }
+        `/boundary/v1/targets/${selectedTarget}:authorize-session`,
+        {},
+        { headers: { 'Authorization': `Bearer ${token}` } }
       );
-      console.log('Authorization successful:', resp.data);
+      
+      const sa = resp.data;
+      console.log('Authorization successful:', sa);
       setSession({
-        sessionId: resp.data.session_id,
-        authorizationToken: resp.data.authorization_token,
+        sessionId: sa.session_id,
+        authorizationToken: sa.authorization_token,
       });
       setStatus('Session authorized');
     } catch (err: any) {
       const msg = err.response?.data || err.message;
-      setError(`Authorization failed: ${msg}`);
+      setError(`Authorization failed: ${typeof msg === 'object' ? JSON.stringify(msg) : msg}`);
       setStatus('Error');
     }
   };
@@ -210,13 +251,18 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <input
-              type="text"
-              className="p-2 rounded bg-gray-800 border border-gray-700 w-64 text-sm"
-              value={targetId}
-              onChange={(e) => setTargetId(e.target.value)}
-              placeholder="Target ID (ttcp_...)"
-            />
+            <select
+              className="p-2 rounded bg-gray-800 border border-gray-700 w-64 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={selectedTarget}
+              onChange={(e) => setSelectedTarget(e.target.value)}
+            >
+              <option value="">Select a target...</option>
+              {targets.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name || t.id} ({t.type})
+                </option>
+              ))}
+            </select>
             <button
               onClick={handleConnect}
               disabled={status === 'Connected' || status.includes('...')}

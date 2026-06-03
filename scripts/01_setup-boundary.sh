@@ -212,7 +212,75 @@ curl -s -X POST \
 
 echo "RBAC configured: Engineering team can access SSH target."
 
-# 8. Synchronize .env
+# 8. Add Discovery Roles for Org and Global visibility
+echo "Establishing Discovery RBAC..."
+
+# Org-level Role: Visibility for Projects and Targets
+ORG_ROLE_ID=$(curl -s -X POST \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"scope_id\": \"$ORG_ID\",
+        \"name\": \"Org Discovery\",
+        \"description\": \"Enables project and target visibility at org level\"
+    }" \
+    "$BOUNDARY_ADDR/v1/roles" | jq -r '.id')
+
+curl -s -X POST \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"principal_ids\": [\"$MANAGED_GROUP_ID\"],
+        \"version\": 1
+    }" \
+    "$BOUNDARY_ADDR/v1/roles/$ORG_ROLE_ID:add-principals" > /dev/null
+
+curl -s -X POST \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"grant_strings\": [
+            \"ids=*;type=target;actions=list,read\",
+            \"ids=*;type=scope;actions=list,read\"
+        ],
+        \"version\": 2
+    }" \
+    "$BOUNDARY_ADDR/v1/roles/$ORG_ROLE_ID:add-grants" > /dev/null
+
+# Global-level Role: Visibility for Org
+GLOBAL_ROLE_ID=$(curl -s -X POST \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"scope_id\": \"global\",
+        \"name\": \"Global Discovery\",
+        \"description\": \"Enables org visibility at global level\"
+    }" \
+    "$BOUNDARY_ADDR/v1/roles" | jq -r '.id')
+
+curl -s -X POST \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"principal_ids\": [\"$MANAGED_GROUP_ID\"],
+        \"version\": 1
+    }" \
+    "$BOUNDARY_ADDR/v1/roles/$GLOBAL_ROLE_ID:add-principals" > /dev/null
+
+curl -s -X POST \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"grant_strings\": [
+            \"ids=*;type=scope;actions=list,read\"
+        ],
+        \"version\": 2
+    }" \
+    "$BOUNDARY_ADDR/v1/roles/$GLOBAL_ROLE_ID:add-grants" > /dev/null
+
+echo "Discovery RBAC configured: Engineering team can discover targets from global scope."
+
+# 9. Synchronize .env
 echo "Synchronizing .env..."
 cat <<EOF > .env
 BOUNDARY_ADDR=$BOUNDARY_ADDR
@@ -228,6 +296,7 @@ echo "Synchronizing Frontend defaults..."
 cat <<EOF > client/.env.local
 VITE_LDAP_AUTH_METHOD_ID=$LDAP_AUTH_METHOD_ID
 VITE_TARGET_ID=$TARGET_ID
+VITE_ADMIN_PASSWORD=$BOUNDARY_ADMIN_PASSWORD
 EOF
 
 echo "--------------------------------------------------"
