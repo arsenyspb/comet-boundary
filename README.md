@@ -37,11 +37,11 @@ graph TB
     end
 
     UI -- "HTTPS/WSS" --> Front
+    UI -- "HTTP (via Proxy)" --> Cont
     Front -- "Internal Proxy" --> Back
-    Back -- "(1) Auth/z (gRPC)" --> Cont
-    Back -- "(2) Tunnel (apiproxy)" --> Work
+    Back -- "Tunnel (apiproxy)" --> Work
     Cont -- "State" --> DB
-    Work -- "(3) SSH" --> SSH
+    Work -- "SSH" --> SSH
 
     %% Styling for light gray background
     style Browser fill:#f9f9f9,stroke:#d3d3d3
@@ -52,28 +52,40 @@ graph TB
 ```
 
 ### Communication Planes
-1.  **Control Plane (BFF -> Controller):** The Backend uses the Boundary SDK to authenticate users and authorize sessions.
-2.  **Data Plane (BFF -> Worker):** Once authorized, the Backend establishes a secure tunnel to the Worker using `apiproxy` and pipes the resulting SSH stream to the browser via WebSockets.
+1.  **Identity & Control Plane (Browser -> Backend/Controller):** 
+    *   **Login:** The Browser sends LDAP or Password credentials to the Backend's `/auth/login` endpoint. The Backend uses the Boundary Go SDK to exchange these for a Boundary `token`.
+    *   **Discovery:** Once logged in, the Browser uses the `token` to call the Boundary Controller directly (via Vite proxy) to fetch `GET /v1/targets`. This leverages Boundary's RBAC to show only authorized targets.
+    *   **Authorization:** The Browser calls `POST /v1/targets/:id:authorize-session` directly against the Controller to receive a short-lived `authorization_token`.
+2.  **Data Plane (BFF -> Worker):** The Browser establishes a WebSocket to the Backend, passing the `authorization_token`. The Backend uses `apiproxy` to create a secure tunnel to the Boundary Worker and pipes the SSH stream.
 
 ### Connection Flow
 ```mermaid
 sequenceDiagram
     participant User as Browser (xterm.js)
-    participant Front as Frontend (Vite Proxy)
+    participant LDAP as OpenLDAP
     participant Back as Backend (Go Proxy)
-    participant Bound as Boundary (Worker/Controller)
+    participant Bound as Boundary (Controller)
+    participant Work as Boundary (Worker)
     participant SSH as Target (SSH Server)
 
-    User->>Front: Click Connect (Target ID)
-    Front->>Back: Proxy POST /sessions/authorize
-    Back->>Bound: Authorize Session
-    Bound-->>Back: Session Authz Token + Endpoint
-    Back-->>Front: Authz Success
-    Front-->>User: Authz Success
-    User->>Front: WebSocket /ws/ssh (Authz Token)
-    Front->>Back: Proxy WebSocket
-    Back->>Bound: Establish Boundary Proxy (apiproxy)
-    Bound-->>Back: Local Proxy Listener
+    Note over User,Back: Phase 1: Identity
+    User->>Back: POST /auth/login (alice/changeme)
+    Back->>Bound: SDK: Authenticate (LDAP)
+    Bound->>LDAP: Bind User
+    LDAP-->>Bound: Success
+    Bound-->>Back: session_token
+    Back-->>User: token (JWT)
+
+    Note over User,Bound: Phase 2: Discovery & Authz
+    User->>Bound: GET /v1/targets?recursive=true (using token)
+    Bound-->>User: Scoped Target List (RBAC filtered)
+    User->>Bound: POST /v1/targets/:id:authorize-session
+    Bound-->>User: authorization_token + worker_endpoint
+
+    Note over User,SSH: Phase 3: Data Plane
+    User->>Back: WebSocket /ws/ssh (authorization_token)
+    Back->>Work: Establish Boundary Proxy (apiproxy)
+    Work-->>Back: Local Proxy Listener
     Back->>SSH: Dial SSH via Proxy (localhost:port)
     SSH-->>Back: SSH Handshake Success
     Back-->>User: WebSocket Stream Established
