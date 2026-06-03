@@ -20,11 +20,14 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
+type AuthMethod = 'ldap' | 'password';
+
 const App: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [token, setToken] = useState('');
-  const [loginName, setLoginName] = useState(import.meta.env.VITE_ADMIN_USER || 'admin');
-  const [password, setPassword] = useState(import.meta.env.VITE_ADMIN_PASSWORD || '');
+  const [authMethod, setAuthMethod] = useState<AuthMethod>('ldap');
+  const [loginName, setLoginName] = useState('');
+  const [password, setPassword] = useState('');
   const [targetId, setTargetId] = useState(import.meta.env.VITE_TARGET_ID || '');
   const [session, setSession] = useState<{ sessionId: string; authorizationToken: string } | null>(null);
   const [status, setStatus] = useState<string>('Ready');
@@ -33,17 +36,29 @@ const App: React.FC = () => {
   const xtermRef = useRef<Terminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
+  const getAuthMethodId = (): string => {
+    if (authMethod === 'ldap') {
+      return import.meta.env.VITE_LDAP_AUTH_METHOD_ID || '';
+    }
+    return import.meta.env.VITE_AUTH_METHOD_ID || '';
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus('Logging in...');
     setError(null);
     try {
-      const resp = await axios.post(`/auth/login`, { login_name: loginName, password });
+      const resp = await axios.post(`/auth/login`, {
+        login_name: loginName,
+        password,
+        auth_method_id: getAuthMethodId(),
+      });
       setToken(resp.data.token);
       setIsLoggedIn(true);
       setStatus('Logged in');
-    } catch (err: any) {
-      const msg = err.response?.data?.error || err.response?.data || err.message;
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: unknown }; message?: string };
+      const msg = axiosErr.response?.data || axiosErr.message;
       setError(`Login failed: ${typeof msg === 'object' ? JSON.stringify(msg) : msg}`);
       setStatus('Error');
     }
@@ -64,9 +79,10 @@ const App: React.FC = () => {
         authorizationToken: resp.data.authorization_token,
       });
       setStatus('Session authorized');
-    } catch (err: any) {
-      const msg = err.response?.data || err.message;
-      setError(`Authorization failed: ${msg}`);
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: unknown }; message?: string };
+      const msg = axiosErr.response?.data || axiosErr.message;
+      setError(`Authorization failed: ${typeof msg === 'object' ? JSON.stringify(msg) : msg}`);
       setStatus('Error');
     }
   };
@@ -74,7 +90,6 @@ const App: React.FC = () => {
   useEffect(() => {
     if (session && terminalRef.current) {
       setStatus('Connecting to WebSocket...');
-      // Clean up previous instance if any
       if (xtermRef.current) {
         xtermRef.current.dispose();
         xtermRef.current = null;
@@ -107,7 +122,7 @@ const App: React.FC = () => {
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
         if (msg.type === 'data') {
-          if (status !== 'Connected') setStatus('Connected');
+          setStatus((prev) => prev !== 'Connected' ? 'Connected' : prev);
           term.write(msg.data);
         }
       };
@@ -120,7 +135,7 @@ const App: React.FC = () => {
 
       ws.onclose = () => {
         console.log('WebSocket closed');
-        if (status !== 'Error') setStatus('Disconnected');
+        setStatus((prev) => prev !== 'Error' ? 'Disconnected' : prev);
       };
 
       term.onData((data) => {
@@ -149,6 +164,35 @@ const App: React.FC = () => {
         <form onSubmit={handleLogin} className="p-8 bg-gray-800 rounded-lg shadow-xl w-96">
           <h2 className="text-2xl font-bold mb-6 text-center">Comet Boundary Login</h2>
           {error && <div className="mb-4 p-2 bg-red-900 border border-red-700 text-red-100 text-sm rounded">{error}</div>}
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-2">Authentication Method</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setAuthMethod('ldap')}
+                className={`flex-1 p-2 rounded text-sm font-medium transition-colors ${
+                  authMethod === 'ldap'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                LDAP
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthMethod('password')}
+                className={`flex-1 p-2 rounded text-sm font-medium transition-colors ${
+                  authMethod === 'password'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                Password
+              </button>
+            </div>
+          </div>
+
           <div className="mb-4">
             <label className="block text-sm font-medium mb-1">Username</label>
             <input
@@ -156,6 +200,7 @@ const App: React.FC = () => {
               className="w-full p-2 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={loginName}
               onChange={(e) => setLoginName(e.target.value)}
+              placeholder={authMethod === 'ldap' ? 'e.g. alice' : 'e.g. admin'}
             />
           </div>
           <div className="mb-6">
@@ -174,6 +219,11 @@ const App: React.FC = () => {
           >
             {status.includes('...') ? status : 'Login'}
           </button>
+          {authMethod === 'ldap' && (
+            <p className="mt-3 text-xs text-gray-400 text-center">
+              Sign in with your LDAP credentials
+            </p>
+          )}
         </form>
       </div>
     );
