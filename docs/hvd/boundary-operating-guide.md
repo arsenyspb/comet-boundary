@@ -1,7 +1,7 @@
 # Boundary: Operating Guide for Adoption
 
 
-> **Source:** HashiCorp Validated Designs — regenerated from canonical MDX in `hashicorp/hvd-docs`.
+> **Source:** HashiCorp Validated Designs — built from public HVD documentation for convenience.
 
 
 > References to *Boundary* apply to both HCP Boundary and Boundary Enterprise except where specified.

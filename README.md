@@ -152,9 +152,10 @@ Vite 6+ blocks requests from unrecognized hostnames. When exposing the frontend 
 
 Tunnel proxies that use HTTP Basic Auth intercept the `Authorization` header at the proxy level. If the application sends its own tokens via `Authorization`, the proxy will reject them with `401`. Use a custom header (e.g. `X-Boundary-Token`) to avoid the conflict.
 
-## Roadmap
-- **Slice 2:** RDP integration via Apache Guacamole (`guacd`).
-- **Identity:** Transition from password injection to SAML/OIDC/SSO.
-- **Discovery:** Implement a backend target catalog (Database/Vault KV).
+## Roadmap & Project Status
+The project roadmap, including feature development (Slice 2 RDP) and architectural alignment (HVD), is managed dynamically via GitHub Issues.
 
-See `CONTRIBUTING.md` for detailed technical debt and implementation notes.
+- **Active Backlog:** [GitHub Issues](https://github.com/arsenyspb/comet-boundary/issues)
+- **HVD Alignment Tracker:** [Issues labeled `hvd-alignment`](https://github.com/arsenyspb/comet-boundary/issues?q=is%3Aopen+is%3Aissue+label%3Ahvd-alignment)
+
+For a detailed breakdown of technical debt and implementation standards, see [CONTRIBUTING.md](./CONTRIBUTING.md).

@@ -1,7 +1,7 @@
 # Boundary: Solution Design Guide
 
 
-> **Source:** HashiCorp Validated Designs — regenerated from canonical MDX in `hashicorp/hvd-docs`.
+> **Source:** HashiCorp Validated Designs — built from public HVD documentation for convenience.
 
 
 > **Applies to:** Boundary Enterprise 0.17.x+ent
