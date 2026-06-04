@@ -72,7 +72,8 @@ func handleSSH(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Start Boundary Proxy
+	// 1. Initialize Boundary SDK proxy using browser-provided authorization token.
+	// This starts the "Data Plane" negotiation with the Boundary infrastructure.
 	clientProxy, err := apiproxy.New(ctx, initReq.AuthzToken)
 	if err != nil {
 		log.Printf("Proxy creation error: %v", err)
@@ -80,12 +81,16 @@ func handleSSH(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
+		// 2. Establish the identity-aware tunnel to the Boundary Worker.
+		// This background process handles authentication and encryption to the worker.
 		if err := clientProxy.Start(); err != nil {
 			log.Printf("Proxy start error: %v", err)
 		}
 	}()
 
 	// Wait for proxy to be ready
+	// 3. Retrieve local loopback address that bridges to the Boundary tunnel.
+	// Any bytes sent to this address are intercepted by the SDK and routed to the Worker.
 	addr := clientProxy.ListenerAddress(ctx)
 	if addr == "" {
 		for i := 0; i < 10; i++ {
@@ -121,7 +126,8 @@ func handleSSH(w http.ResponseWriter, r *http.Request) {
 		Timeout:         5 * time.Second,
 	}
 
-	// Connect to the proxy
+	// 4. Route SSH traffic through the Boundary Worker via the local proxy listener.
+	// This completes the traversal: Browser (WS) -> Backend (Go) -> Boundary Worker -> SSH Target.
 	sshConn, err := ssh.Dial("tcp", addr, sshConfig)
 	if err != nil {
 		log.Printf("SSH dial error: %v", err)

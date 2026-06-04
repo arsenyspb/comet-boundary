@@ -66,9 +66,9 @@ sequenceDiagram
     participant Back as Backend (Go Proxy)
     participant Bound as Boundary (Controller)
     participant Work as Boundary (Worker)
-    participant SSH as Target (SSH Server)
+    participant Host as Target Host (SSH)
 
-    Note over User,Back: Phase 1: Identity
+    Note over User,Back: Phase 1: Identity (Proxied via BFF)
     User->>Back: POST /auth/login (alice/changeme)
     Back->>Bound: SDK: Authenticate (LDAP)
     Bound->>LDAP: Bind User
@@ -77,19 +77,25 @@ sequenceDiagram
     Back-->>User: token (JWT)
 
     Note over User,Bound: Phase 2: Discovery & Authz
-    User->>Bound: GET /v1/targets?recursive=true (using token)
+    User->>Bound: GET /v1/targets (using token)
     Bound-->>User: Scoped Target List (RBAC filtered)
     User->>Bound: POST /v1/targets/:id:authorize-session
     Bound-->>User: authorization_token + worker_endpoint
 
-    Note over User,SSH: Phase 3: Data Plane
+    Note over User,Host: Phase 3: Data Plane (Managed Tunnel)
     User->>Back: WebSocket /ws/ssh (authorization_token)
-    Back->>Work: Establish Boundary Proxy (apiproxy)
-    Work-->>Back: Local Proxy Listener
-    Back->>SSH: Dial SSH via Proxy (localhost:port)
-    SSH-->>Back: SSH Handshake Success
+    Back->>Back: Start SDK Bridge (apiproxy)
+    Back->>Work: Negotiate Tunnel (Mutual TLS)
+    Work-->>Back: Local Loopback Ready (127.0.0.1:port)
+    
+    Note right of Back: [DEBT] BFF injects static credentials
+    Back->>Back: Dial SSH via Loopback
+    Back->>Work: (SDK Tunnels Traffic)
+    Work->>Host: Connect to Target Host
+    Host-->>Work: Handshake Success
+    Work-->>Back: (Tunnel Stream Established)
     Back-->>User: WebSocket Stream Established
-    User->>SSH: Secure Shell Session (Bi-directional)
+    User->>Host: Secure Shell Session (Bi-directional)
 ```
 
 - **Backend:** Go (Chi) + Boundary SDK. Bridges Boundary TCP sessions to WebSockets.
