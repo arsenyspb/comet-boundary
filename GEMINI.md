@@ -15,6 +15,7 @@ This file provides Gemini-specific strategies for operating within this reposito
 
 ### 3. Architectural Standards
 - **HVD Alignment:** All planning, architectural decisions, and infrastructure implementations MUST align with HashiCorp Validated Designs. Before proposing changes or writing configuration, you MUST read the relevant guides in `docs/hvd/` and validate your approach against them.
+- **Host Abstraction:** NEVER create targets using the `-address` attribute. All new targets MUST follow the hierarchy: **Host Catalog -> Host -> Host Set -> Target**.
 
 ---
 
@@ -27,5 +28,5 @@ If verification fails, establish a fresh state:
 ```bash
 make replay
 ```
-**Access Details:** Check `.env` for generated credentials and target IDs.
+**Access Details:** Check `.env` for credentials. LDAP users are `alice` and `bob` (password: `changeme`).
 

@@ -31,8 +31,15 @@ graph TB
             DB[(Postgres)]
         end
 
+        subgraph HVD ["Host Abstraction"]
+            Catalog["Host Catalog"]
+            SetA["Team A Host Set"]
+            SetB["Team B Host Set"]
+        end
+
         subgraph Targets ["Resource Targets"]
-            SSH["SSH Target (OpenSSH)"]
+            H1["ssh-host-1"]
+            H2["ssh-host-2"]
         end
     end
 
@@ -41,7 +48,10 @@ graph TB
     Front -- "Internal Proxy" --> Back
     Back -- "Tunnel (apiproxy)" --> Work
     Cont -- "State" --> DB
-    Work -- "SSH" --> SSH
+    Work -- "Routed Access" --> SetA
+    Work -- "Routed Access" --> SetB
+    SetA -- "HA/Isolation" --> H1
+    SetB -- "HA/Isolation" --> H2
 
     %% Styling for light gray background
     style Browser fill:#f9f9f9,stroke:#d3d3d3
@@ -78,8 +88,10 @@ sequenceDiagram
 
     Note over User,Bound: Phase 2: Discovery & Authz
     User->>Bound: GET /v1/targets (using token)
-    Bound-->>User: Scoped Target List (RBAC filtered)
-    User->>Bound: POST /v1/targets/:id:authorize-session
+    Bound-->>User: Team-Scoped Targets (RBAC filtered)
+    User->>Bound: GET /v1/host-sets/:id/hosts
+    Bound-->>User: List of physical hosts in set
+    User->>Bound: POST /v1/targets/:id:authorize-session (host_id pinned)
     Bound-->>User: authorization_token + worker_endpoint
 
     Note over User,Host: Phase 3: Data Plane (Managed Tunnel)
@@ -126,8 +138,14 @@ This command performs the following sequence:
 5.  **Verify:** Executes `./scripts/02_verify-setup.sh` which validates Docker healthchecks and runs backend unit tests.
 
 ## Technical Details
-- **SSH Credentials:** The demo is hardcoded to connect to the target as `boundary-user` with password `password`.
-- **UI Login:** Pre-filled automatically via Vite environment variables. If fields are empty, check `client/.env.local`.
+- **HVD Host Abstraction:** The demo uses a production-grade resource hierarchy. Targets do not have direct addresses; instead, they point to **Host Sets**, which contain **Host Resources** mapping to the physical `ssh-host-X` containers.
+- **Team Isolation:** The environment is scoped via Boundary RBAC:
+    - **Alice** (Team A) -> Only sees "A Team Host" -> Connects to `ssh-host-1`.
+    - **Bob** (Team B) -> Only sees "B Team Host" -> Connects to `ssh-host-2`.
+- **SSH Credentials:** The demo is hardcoded to connect to targets as `boundary-user` with password `password`.
+- **UI Login:** LDAP users can log in with their directory credentials:
+    - `alice` / `changeme`
+    - `bob` / `changeme`
 - **Boundary API:** Accessible at [http://localhost:9200](http://localhost:9200).
 
 ## Known Limitations — Hermetic VM Exposure
