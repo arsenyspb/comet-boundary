@@ -26,7 +26,7 @@ deps:
 # 1. Bootstrap the infrastructure and initialize Boundary configuration
 setup:
 	@echo "Step 1: Starting infrastructure and bootstrapping Boundary..."
-	docker-compose up -d postgres openldap controller worker ssh-target setup
+	docker-compose up -d postgres openldap controller worker ssh-target-1 ssh-target-2 setup
 	./scripts/01_setup-boundary.sh
 	@echo "Syncing backend dependencies..."
 	cd server && go mod tidy
@@ -56,4 +56,4 @@ clean:
 # Restart the application services without rebuilding infrastructure
 restart: stop
 	docker-compose up -d --build backend frontend
-	docker-compose up -d postgres openldap controller worker ssh-target
+	docker-compose up -d postgres openldap controller worker ssh-target-1 ssh-target-2

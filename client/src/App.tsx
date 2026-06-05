@@ -27,7 +27,9 @@ const App: React.FC = () => {
   const [password, setPassword] = useState('');
   const [authMethod, setAuthMethod] = useState<'ldap' | 'password'>('ldap');
   const [targets, setTargets] = useState<any[]>([]);
-  const [selectedTarget, setSelectedTarget] = useState<string>(import.meta.env.VITE_TARGET_ID || '');
+  const [selectedTarget, setSelectedTarget] = useState<string>('');
+  const [hosts, setHosts] = useState<any[]>([]);
+  const [selectedHost, setSelectedHost] = useState<string>('');
   const [session, setSession] = useState<{ sessionId: string; authorizationToken: string } | null>(null);
   const [status, setStatus] = useState<string>('Ready');
   const [error, setError] = useState<string | null>(null);
@@ -43,28 +45,65 @@ const App: React.FC = () => {
     }
   }, [isLoggedIn, token]);
 
+  useEffect(() => {
+    if (selectedTarget && token) {
+      fetchHosts(selectedTarget);
+    } else {
+      setHosts([]);
+      setSelectedHost('');
+    }
+  }, [selectedTarget, token]);
+
+  const fetchHosts = async (targetId: string) => {
+    try {
+      setStatus('Discovering hosts...');
+      setHosts([]);
+      setSelectedHost('');
+      // 1. Get target details to find host sets
+      const targetResp = await axios.get(`/boundary/v1/targets/${targetId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const hostSetIds = targetResp.data.item.host_set_ids || [];
+      
+      // 2. Fetch hosts for each host set
+      const allHosts: any[] = [];
+      for (const hostSetId of hostSetIds) {
+        const hsResp = await axios.get(`/boundary/v1/host-sets/${hostSetId}?list_hosts=true`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (hsResp.data.item.hosts) {
+          allHosts.push(...hsResp.data.item.hosts);
+        }
+      }
+      
+      setHosts(allHosts);
+      if (allHosts.length === 1) {
+        setSelectedHost(allHosts[0].id);
+      } else {
+        setSelectedHost('');
+      }
+      setStatus('Hosts discovered');
+    } catch (err: any) {
+      console.error('Failed to fetch hosts:', err);
+      // Don't set global error here to avoid blocking login flow, just log it
+      setStatus('Target selected');
+    }
+  };
+
   const fetchTargets = async () => {
     setStatus('Discovering targets...');
-    console.log('Discovery: Fetching targets from /boundary/v1/targets?recursive=true&scope_id=global');
-    console.log('Discovery: Using token prefix:', token.substring(0, 10) + '...');
     try {
       const resp = await axios.get('/boundary/v1/targets?recursive=true&scope_id=global', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      console.log('Discovery: Success, found', resp.data.items?.length || 0, 'targets');
-      setTargets(resp.data.items || []);
+      const discoveredTargets = resp.data.items || [];
+      setTargets(discoveredTargets);
       setStatus('Targets discovered');
+      
+      // Always reset selection on fresh discovery to avoid stale IDs
+      setSelectedTarget('');
     } catch (err: any) {
-      console.error('Discovery: Failed!');
-      if (err.response) {
-        console.error('Discovery Error Status:', err.response.status);
-        console.error('Discovery Error Data:', JSON.stringify(err.response.data, null, 2));
-        console.error('Discovery Error Headers:', JSON.stringify(err.response.headers, null, 2));
-      } else if (err.request) {
-        console.error('Discovery Error: No response received', err.request);
-      } else {
-        console.error('Discovery Error Message:', err.message);
-      }
+      console.error('Discovery: Failed!', err);
       setError(`Failed to discover targets: ${err.response?.data?.message || err.message}`);
       setStatus('Error');
     }
@@ -91,17 +130,29 @@ const App: React.FC = () => {
   };
 
   const handleConnect = async () => {
-    if (!selectedTarget) {
+    console.log('Connect attempt: Target =', selectedTarget, 'Host =', selectedHost);
+    if (!selectedTarget || selectedTarget === '') {
       setError('Please select a target');
       return;
     }
+    // If we have discovered hosts, one MUST be selected
+    if (hosts.length > 0 && (!selectedHost || selectedHost === '')) {
+      setError('Please select a specific host from the list');
+      return;
+    }
+    
     setStatus('Authorizing session...');
     setError(null);
     try {
       // Authorize session DIRECTLY against Boundary
+      const payload: any = {};
+      if (selectedHost) {
+        payload.host_id = selectedHost;
+      }
+      
       const resp = await axios.post(
         `/boundary/v1/targets/${selectedTarget}:authorize-session`,
-        {},
+        payload,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
       
@@ -252,20 +303,48 @@ const App: React.FC = () => {
           </div>
           <div className="flex items-center gap-4">
             <select
-              className="p-2 rounded bg-gray-800 border border-gray-700 w-64 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="p-2 rounded bg-gray-800 border border-gray-700 w-48 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={selectedTarget}
-              onChange={(e) => setSelectedTarget(e.target.value)}
+              onChange={(e) => {
+                console.log('Target selected:', e.target.value);
+                setSelectedTarget(e.target.value);
+              }}
+              disabled={status === 'Connected' || status === 'Discovering targets...'}
             >
-              <option value="">Select a target...</option>
+              <option value="">{status === 'Discovering targets...' ? 'Loading Targets...' : 'Select Target...'}</option>
               {targets.map((t) => (
                 <option key={t.id} value={t.id}>
-                  {t.name || t.id} ({t.type})
+                  {t.name || t.id}
                 </option>
               ))}
             </select>
+
+            {status === 'Discovering hosts...' ? (
+              <div className="text-xs text-blue-400 animate-pulse">Loading Hosts...</div>
+            ) : (
+              selectedTarget && hosts.length > 1 && (
+                <select
+                  className="p-2 rounded bg-gray-800 border border-gray-700 w-48 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={selectedHost}
+                  onChange={(e) => {
+                    console.log('Host selected:', e.target.value);
+                    setSelectedHost(e.target.value);
+                  }}
+                  disabled={status === 'Connected'}
+                >
+                  <option value="">Select Host...</option>
+                  {hosts.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.name || h.address || h.id}
+                    </option>
+                  ))}
+                </select>
+              )
+            )}
+
             <button
               onClick={handleConnect}
-              disabled={status === 'Connected' || status.includes('...')}
+              disabled={status === 'Connected' || status.includes('...') || (selectedTarget && status !== 'Hosts discovered' && status !== 'Target selected')}
               className="p-2 px-6 rounded bg-green-600 hover:bg-green-700 font-bold transition-colors text-sm disabled:opacity-50"
             >
               {status === 'Connected' ? 'Connected' : 'Connect'}
@@ -274,6 +353,9 @@ const App: React.FC = () => {
         </div>
 
         {error && <div className="mb-4 p-3 bg-red-900 border border-red-700 text-red-100 rounded text-sm">{error}</div>}
+        
+        {/* Debug info (hidden in production, but useful for now) */}
+        {/* <div className="text-xs text-gray-500 mb-2">Target: {selectedTarget || 'none'} | Host: {selectedHost || 'none'} | Status: {status}</div> */}
 
         <div className="bg-black rounded-lg overflow-hidden border border-gray-800 shadow-2xl">
           <div
