@@ -152,7 +152,53 @@ fi
 echo "Created Target A ID: $TARGET_A_ID"
 echo "Created Target B ID: $TARGET_B_ID"
 
-# 5. Configure LDAP Auth Method
+# 5. HVD Alignment: Credential Brokering via Static Credential Store
+# Instead of hardcoding SSH credentials in the BFF, we use Boundary's credential
+# brokering pattern. Credentials are stored in Boundary and injected into sessions.
+echo "Creating Static Credential Store..."
+CRED_STORE_ID=$(docker exec -e BOUNDARY_TOKEN=$TOKEN comet-boundary-controller-1 boundary credential-stores create static \
+    -name "SSH Credential Store" \
+    -description "Static store for SSH target credentials" \
+    -scope-id $PROJECT_ID \
+    -token env://BOUNDARY_TOKEN \
+    -format json | jq -r .item.id)
+
+if [ -z "$CRED_STORE_ID" ] || [ "$CRED_STORE_ID" = "null" ]; then
+    echo "Failed to create credential store."
+    exit 1
+fi
+echo "Created Credential Store ID: $CRED_STORE_ID"
+
+echo "Creating SSH Credential (username-password)..."
+CRED_ID=$(docker exec -e BOUNDARY_TOKEN=$TOKEN -e BOUNDARY_CRED_PASSWORD=password comet-boundary-controller-1 boundary credentials create username-password \
+    -name "SSH Target Credential" \
+    -description "Brokered credential for SSH targets" \
+    -credential-store-id $CRED_STORE_ID \
+    -username "boundary-user" \
+    -password env://BOUNDARY_CRED_PASSWORD \
+    -token env://BOUNDARY_TOKEN \
+    -format json | jq -r .item.id)
+
+if [ -z "$CRED_ID" ] || [ "$CRED_ID" = "null" ]; then
+    echo "Failed to create credential."
+    exit 1
+fi
+echo "Created Credential ID: $CRED_ID"
+
+echo "Linking brokered credential to targets..."
+docker exec -e BOUNDARY_TOKEN=$TOKEN comet-boundary-controller-1 boundary targets add-credential-sources \
+    -id $TARGET_A_ID \
+    -brokered-credential-source $CRED_ID \
+    -token env://BOUNDARY_TOKEN > /dev/null
+
+docker exec -e BOUNDARY_TOKEN=$TOKEN comet-boundary-controller-1 boundary targets add-credential-sources \
+    -id $TARGET_B_ID \
+    -brokered-credential-source $CRED_ID \
+    -token env://BOUNDARY_TOKEN > /dev/null
+
+echo "Credential brokering configured for both targets."
+
+# 6. Configure LDAP Auth Method (previously step 5)
 echo "Configuring LDAP Auth Method..."
 
 # Wait for OpenLDAP to be reachable from the controller network

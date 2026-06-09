@@ -30,7 +30,7 @@ const App: React.FC = () => {
   const [selectedTarget, setSelectedTarget] = useState<string>('');
   const [hosts, setHosts] = useState<any[]>([]);
   const [selectedHost, setSelectedHost] = useState<string>('');
-  const [session, setSession] = useState<{ sessionId: string; authorizationToken: string } | null>(null);
+  const [session, setSession] = useState<{ sessionId: string; authorizationToken: string; sshUser: string; sshPassword: string } | null>(null);
   const [status, setStatus] = useState<string>('Ready');
   const [error, setError] = useState<string | null>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -158,9 +158,24 @@ const App: React.FC = () => {
       
       const sa = resp.data;
       console.log('Authorization successful:', sa);
+
+      // Extract brokered credentials from Boundary's authorize-session response
+      const credentials = sa.credentials || [];
+      const sshCred = credentials.find((c: any) => c.credential?.username) || {};
+      const sshUser = sshCred.credential?.username || '';
+      const sshPassword = sshCred.credential?.password || '';
+
+      if (!sshUser || !sshPassword) {
+        setError('Credential brokering failed: no credentials returned by Boundary. Ensure a credential source is linked to the target.');
+        setStatus('Error');
+        return;
+      }
+
       setSession({
         sessionId: sa.session_id,
         authorizationToken: sa.authorization_token,
+        sshUser,
+        sshPassword,
       });
       setStatus('Session authorized');
     } catch (err: any) {
@@ -200,7 +215,11 @@ const App: React.FC = () => {
       ws.onopen = () => {
         console.log('WebSocket connected');
         setStatus('Negotiating SSH...');
-        ws.send(JSON.stringify({ token: session.authorizationToken }));
+        ws.send(JSON.stringify({
+          token: session.authorizationToken,
+          ssh_user: session.sshUser,
+          ssh_password: session.sshPassword,
+        }));
       };
 
       ws.onmessage = (event) => {
