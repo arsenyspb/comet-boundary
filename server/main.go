@@ -21,15 +21,13 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
 
+	"github.com/arsenyspb/comet-boundary/pkg/auth"
+	"github.com/arsenyspb/comet-boundary/pkg/proxy"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/gorilla/websocket"
-	"github.com/hashicorp/boundary/api"
-	"github.com/hashicorp/boundary/api/authmethods"
-	apiproxy "github.com/hashicorp/boundary/api/proxy"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -53,8 +51,6 @@ func handleSSH(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ws.Close()
 
-	// Initial message should contain the session authorization token and brokered credentials.
-	// Credentials are provided by Boundary's credential brokering (authorize-session response).
 	_, p, err := ws.ReadMessage()
 	if err != nil {
 		log.Printf("Read initial message error: %v", err)
@@ -77,76 +73,20 @@ func handleSSH(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Received authz token, starting Boundary proxy...")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := context.Background()
 
-	// 1. Initialize Boundary SDK proxy using browser-provided authorization token.
-	// This starts the "Data Plane" negotiation with the Boundary infrastructure.
-	clientProxy, err := apiproxy.New(ctx, initReq.AuthzToken)
+	sshSess, err := proxy.DialThroughBoundary(ctx, initReq.AuthzToken, initReq.SSHUser, initReq.SSHPass)
 	if err != nil {
-		log.Printf("Proxy creation error: %v", err)
+		log.Printf("Dial through Boundary error: %v", err)
 		return
 	}
+	defer sshSess.Close()
 
-	go func() {
-		// 2. Establish the identity-aware tunnel to the Boundary Worker.
-		// This background process handles authentication and encryption to the worker.
-		if err := clientProxy.Start(); err != nil {
-			log.Printf("Proxy start error: %v", err)
-		}
-	}()
-
-	// Wait for proxy to be ready
-	// 3. Retrieve local loopback address that bridges to the Boundary tunnel.
-	// Any bytes sent to this address are intercepted by the SDK and routed to the Worker.
-	addr := clientProxy.ListenerAddress(ctx)
-	if addr == "" {
-		for i := 0; i < 10; i++ {
-			time.Sleep(100 * time.Millisecond)
-			addr = clientProxy.ListenerAddress(ctx)
-			if addr != "" {
-				break
-			}
-		}
-	}
-
-	if addr == "" {
-		log.Printf("Proxy failed to provide address")
-		return
-	}
-
-	log.Printf("Boundary proxy ready at %s. Connecting to SSH...", addr)
-
-	// SSH Configuration - Credentials sourced from Boundary's credential brokering
-	sshConfig := &ssh.ClientConfig{
-		User:            initReq.SSHUser,
-		Auth:            []ssh.AuthMethod{ssh.Password(initReq.SSHPass)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         5 * time.Second,
-	}
-
-	// 4. Route SSH traffic through the Boundary Worker via the local proxy listener.
-	// This completes the traversal: Browser (WS) -> Backend (Go) -> Boundary Worker -> SSH Target.
-	sshConn, err := ssh.Dial("tcp", addr, sshConfig)
-	if err != nil {
-		log.Printf("SSH dial error: %v", err)
-		return
-	}
-	defer sshConn.Close()
-
-	log.Printf("SSH connection established.")
-	sess, err := sshConn.NewSession()
-	if err != nil {
-		log.Printf("SSH session error: %v", err)
-		return
-	}
-	defer sess.Close()
-
+	sess := sshSess.Session
 	stdin, _ := sess.StdinPipe()
 	stdout, _ := sess.StdoutPipe()
 	stderr, _ := sess.StderrPipe()
 
-	// Request PTY
 	if err := sess.RequestPty("xterm", 80, 24, ssh.TerminalModes{}); err != nil {
 		log.Printf("PTY request error: %v", err)
 		return
@@ -157,7 +97,6 @@ func handleSSH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Forward SSH output to WebSocket
 	go func() {
 		buf := make([]byte, 1024)
 		for {
@@ -180,7 +119,6 @@ func handleSSH(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Forward WebSocket input to SSH
 	for {
 		var msg SSHMessage
 		if err := ws.ReadJSON(&msg); err != nil {
@@ -239,6 +177,11 @@ func setupRouter() *chi.Mux {
 	log.Printf("Backend initialized with Boundary Addr: %s", boundaryAddr)
 	log.Printf("Backend initialized with Auth Method ID: %s", authMethodID)
 
+	authenticator, err := auth.NewAuthenticator(boundaryAddr, authMethodID)
+	if err != nil {
+		log.Fatalf("Failed to create authenticator: %v", err)
+	}
+
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Comet Boundary Prototype Backend is running"))
 	})
@@ -255,36 +198,13 @@ func setupRouter() *chi.Mux {
 			return
 		}
 
-		client, err := api.NewClient(&api.Config{Addr: boundaryAddr})
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		amClient := authmethods.NewClient(client)
-		params := map[string]interface{}{
-			"login_name": req.LoginName,
-			"password":   req.Password,
-		}
-
-		targetAuthMethodID := authMethodID
-		if req.AuthMethodID != "" {
-			targetAuthMethodID = req.AuthMethodID
-		}
-
-		result, err := amClient.Authenticate(r.Context(), targetAuthMethodID, "login", params)
+		token, err := authenticator.Authenticate(r.Context(), req.LoginName, req.Password, req.AuthMethodID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
 		}
 
-		token, err := result.GetAuthToken()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		json.NewEncoder(w).Encode(AuthResponse{Token: token.Token})
+		json.NewEncoder(w).Encode(AuthResponse{Token: token})
 	})
 
 	r.HandleFunc("/ws/ssh", handleSSH)
