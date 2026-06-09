@@ -53,7 +53,8 @@ func handleSSH(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ws.Close()
 
-	// Initial message should contain the session authorization token
+	// Initial message should contain the session authorization token and brokered credentials.
+	// Credentials are provided by Boundary's credential brokering (authorize-session response).
 	_, p, err := ws.ReadMessage()
 	if err != nil {
 		log.Printf("Read initial message error: %v", err)
@@ -62,9 +63,16 @@ func handleSSH(w http.ResponseWriter, r *http.Request) {
 
 	var initReq struct {
 		AuthzToken string `json:"token"`
+		SSHUser    string `json:"ssh_user"`
+		SSHPass    string `json:"ssh_password"`
 	}
 	if err := json.Unmarshal(p, &initReq); err != nil {
 		log.Printf("Unmarshal init request error: %v", err)
+		return
+	}
+
+	if initReq.SSHUser == "" || initReq.SSHPass == "" {
+		log.Printf("Brokered credentials missing from session request")
 		return
 	}
 
@@ -109,19 +117,10 @@ func handleSSH(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Boundary proxy ready at %s. Connecting to SSH...", addr)
 
-	sshUser := os.Getenv("SSH_USER")
-	if sshUser == "" {
-		sshUser = "boundary-user"
-	}
-	sshPass := os.Getenv("SSH_PASSWORD")
-	if sshPass == "" {
-		sshPass = "password"
-	}
-
-	// SSH Configuration - Sourced from environment
+	// SSH Configuration - Credentials sourced from Boundary's credential brokering
 	sshConfig := &ssh.ClientConfig{
-		User:            sshUser,
-		Auth:            []ssh.AuthMethod{ssh.Password(sshPass)},
+		User:            initReq.SSHUser,
+		Auth:            []ssh.AuthMethod{ssh.Password(initReq.SSHPass)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         5 * time.Second,
 	}
