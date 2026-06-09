@@ -40,6 +40,8 @@ const TerminalView: React.FC<TerminalViewProps> = ({ session, setStatus, setErro
   useEffect(() => {
     if (!terminalRef.current) return;
 
+    let cancelled = false;
+
     setStatus('Connecting to WebSocket...');
 
     if (xtermRef.current) {
@@ -65,6 +67,7 @@ const TerminalView: React.FC<TerminalViewProps> = ({ session, setStatus, setErro
     wsRef.current = ws;
 
     ws.onopen = () => {
+      if (cancelled) return;
       setStatus('Negotiating SSH...');
       ws.send(JSON.stringify({
         token: session.authorizationToken,
@@ -74,6 +77,7 @@ const TerminalView: React.FC<TerminalViewProps> = ({ session, setStatus, setErro
     };
 
     ws.onmessage = (event) => {
+      if (cancelled) return;
       const msg = JSON.parse(event.data);
       if (msg.type === 'data') {
         setStatus('Connected');
@@ -82,11 +86,13 @@ const TerminalView: React.FC<TerminalViewProps> = ({ session, setStatus, setErro
     };
 
     ws.onerror = () => {
+      if (cancelled) return;
       setError('WebSocket connection failed');
       setStatus('Error');
     };
 
     ws.onclose = () => {
+      if (cancelled) return;
       setStatus('Disconnected');
     };
 
@@ -102,6 +108,7 @@ const TerminalView: React.FC<TerminalViewProps> = ({ session, setStatus, setErro
     window.addEventListener('resize', handleResize);
 
     return () => {
+      cancelled = true;
       window.removeEventListener('resize', handleResize);
       term.dispose();
       ws.close();
