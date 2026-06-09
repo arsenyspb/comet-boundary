@@ -67,6 +67,7 @@ docker compose ps  # All should show "healthy" or "Up"
 4. Verify only "A Team Host" appears in dropdown (RBAC isolation)
 5. Select target, click Connect
 6. Verify SSH terminal shows `Welcome to OpenSSH Server` and `ssh-host-1:~$`
+7. Verify NO red "WebSocket connection failed" error banner appears
 
 ### 3. Team B End-to-End (Frontend, port 5173)
 
@@ -75,6 +76,7 @@ docker compose ps  # All should show "healthy" or "Up"
 3. Verify only "B Team Host" appears (RBAC isolation)
 4. Select target, click Connect
 5. Verify SSH terminal shows `Welcome to OpenSSH Server` and `ssh-host-2:~$`
+6. Verify NO red error banner appears
 
 ### 4. Negative Case (No Hardcoded Fallback)
 
@@ -107,6 +109,7 @@ curl -s -X POST \
 - **Setup script fails at credential store creation**: Ensure controller is fully healthy before running. Wait for `docker compose ps` to show controller as healthy.
 - **Frontend shows "Credential brokering failed"**: The credential source might not be linked to the target. Re-run `scripts/01_setup-boundary.sh`.
 - **SSH connection timeout**: Worker might not be healthy yet. Check `docker compose ps` and wait for worker health.
+- **React StrictMode double WebSocket connections**: In dev mode (`<StrictMode>`), `useEffect` runs twice. This creates two WebSocket connections to `/ws/ssh` per Connect click — the first gets `close 1001 (going away)` in backend logs. The `TerminalView.tsx` component uses a `cancelled` flag to prevent the stale first connection from showing a red error banner. If you see `Read initial message error: websocket: close 1001 (going away)` in backend logs, this is expected StrictMode behavior and is harmless.
 
 ## Devin Secrets Needed
 
