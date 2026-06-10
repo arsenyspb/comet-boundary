@@ -18,7 +18,7 @@ jobs:
       - name: Checkout Orchestrator
         uses: actions/checkout@v4
         with:
-          repository: arsenyspb/atobar-scb
+          repository: arsenyspb/atobar
           path: orchestrator
           token: ${{ secrets.ORG_CHECKOUT_TOKEN }}
 

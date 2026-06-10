@@ -217,6 +217,13 @@ else
     exit 1
 fi
 
-echo "=== All checks passed! Demo is ready at http://localhost:5173 ==="
-echo "Credentials: admin / $BOUNDARY_ADMIN_PASSWORD"
-echo "Target ID: $BOUNDARY_TARGET_ID"
+echo "================================================================"
+echo "🎉 🚀 === All checks passed! Demo is ready! === 🚀 🎉"
+echo "🌐 Web App URL:      http://localhost:5173"
+echo "🎯 Target ID:         $BOUNDARY_TARGET_ID"
+echo "----------------------------------------------------------------"
+echo "🛡️  Boundary URL:      http://localhost:9200"
+echo "🔑 Admin Credentials: admin / $BOUNDARY_ADMIN_PASSWORD"
+echo "👥 LDAP Users:        alice / changeme (Team A)"
+echo "                      bob   / changeme (Team B)"
+echo "================================================================"
