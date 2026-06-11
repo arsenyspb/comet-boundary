@@ -15,24 +15,28 @@
 package proxy
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"log"
+	"os/exec"
+	"regexp"
+	"syscall"
 	"time"
 
-	apiproxy "github.com/hashicorp/boundary/api/proxy"
 	"golang.org/x/crypto/ssh"
 )
 
-// SSHSession holds the resources for an active SSH session over a Boundary tunnel.
+// SSHSession holds the resources for an active SSH session backed by a
+// `boundary connect` subprocess.
 type SSHSession struct {
-	Proxy   *apiproxy.ClientProxy
+	Cmd     *exec.Cmd
 	SSHConn *ssh.Client
 	Session *ssh.Session
 	Cancel  context.CancelFunc
 }
 
-// Close tears down the SSH session, connection, and Boundary proxy.
+// Close tears down the SSH session, connection, and Boundary subprocess.
 func (s *SSHSession) Close() {
 	if s.Session != nil {
 		s.Session.Close()
@@ -40,44 +44,94 @@ func (s *SSHSession) Close() {
 	if s.SSHConn != nil {
 		s.SSHConn.Close()
 	}
+	if s.Cmd != nil && s.Cmd.Process != nil {
+		// SIGTERM the process group for graceful shutdown.
+		_ = syscall.Kill(-s.Cmd.Process.Pid, syscall.SIGTERM)
+		done := make(chan struct{})
+		go func() {
+			s.Cmd.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			_ = syscall.Kill(-s.Cmd.Process.Pid, syscall.SIGKILL)
+			<-done
+		}
+	}
 	if s.Cancel != nil {
 		s.Cancel()
 	}
 }
 
-// DialThroughBoundary creates a Boundary SDK proxy tunnel using the given
-// authorization token, then dials SSH through the resulting local listener.
+// DialThroughBoundary spawns a `boundary connect` subprocess using the given
+// authorization token, parses the ephemeral local port from its output, then
+// dials SSH through that port.
 func DialThroughBoundary(ctx context.Context, authzToken, sshUser, sshPass string) (*SSHSession, error) {
 	ctx, cancel := context.WithCancel(ctx)
 
-	clientProxy, err := apiproxy.New(ctx, authzToken)
-	if err != nil {
-		cancel()
-		return nil, fmt.Errorf("proxy creation: %w", err)
+	cmd := exec.Command("boundary", "connect",
+		"-authz-token", authzToken,
+	)
+	// Own process group so we can signal the entire tree on teardown.
+	// Pdeathsig ensures the child is killed if the BFF crashes.
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid:   true,
+		Pdeathsig: syscall.SIGTERM,
 	}
 
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("stdout pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		cancel()
+		return nil, fmt.Errorf("boundary connect start: %w", err)
+	}
+
+	// Parse the proxy listening port from the CLI output.
+	portCh := make(chan string, 1)
+	errCh := make(chan error, 1)
 	go func() {
-		if err := clientProxy.Start(); err != nil {
-			log.Printf("Proxy start error: %v", err)
+		scanner := bufio.NewScanner(stdout)
+		portRe := regexp.MustCompile(`Port:\s+(\d+)`)
+		found := false
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !found {
+				if m := portRe.FindStringSubmatch(line); m != nil {
+					portCh <- m[1]
+					found = true
+				}
+			}
+			// Keep draining stdout to prevent the subprocess from blocking.
+		}
+		if !found {
+			errCh <- fmt.Errorf("boundary connect exited without providing a port")
 		}
 	}()
 
-	addr := clientProxy.ListenerAddress(ctx)
-	if addr == "" {
-		for i := 0; i < 10; i++ {
-			time.Sleep(100 * time.Millisecond)
-			addr = clientProxy.ListenerAddress(ctx)
-			if addr != "" {
-				break
-			}
-		}
-	}
-	if addr == "" {
+	var port string
+	select {
+	case port = <-portCh:
+	case err := <-errCh:
+		cmd.Process.Kill()
 		cancel()
-		return nil, fmt.Errorf("proxy failed to provide listener address")
+		return nil, err
+	case <-time.After(30 * time.Second):
+		cmd.Process.Kill()
+		cancel()
+		return nil, fmt.Errorf("timeout waiting for boundary connect to provide a port")
+	case <-ctx.Done():
+		cmd.Process.Kill()
+		cancel()
+		return nil, ctx.Err()
 	}
 
-	log.Printf("Boundary proxy ready at %s", addr)
+	addr := fmt.Sprintf("127.0.0.1:%s", port)
+	log.Printf("Boundary subprocess ready at %s (PID %d)", addr, cmd.Process.Pid)
 
 	sshConfig := &ssh.ClientConfig{
 		User:            sshUser,
@@ -88,6 +142,7 @@ func DialThroughBoundary(ctx context.Context, authzToken, sshUser, sshPass strin
 
 	sshConn, err := ssh.Dial("tcp", addr, sshConfig)
 	if err != nil {
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 		cancel()
 		return nil, fmt.Errorf("ssh dial: %w", err)
 	}
@@ -95,12 +150,13 @@ func DialThroughBoundary(ctx context.Context, authzToken, sshUser, sshPass strin
 	sess, err := sshConn.NewSession()
 	if err != nil {
 		sshConn.Close()
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 		cancel()
 		return nil, fmt.Errorf("ssh session: %w", err)
 	}
 
 	return &SSHSession{
-		Proxy:   clientProxy,
+		Cmd:     cmd,
 		SSHConn: sshConn,
 		Session: sess,
 		Cancel:  cancel,
