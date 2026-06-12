@@ -148,6 +148,23 @@ This command performs the following sequence:
     - `bob` / `changeme`
 - **Boundary API:** Accessible at [http://localhost:9200](http://localhost:9200).
 
+## Scaling Considerations
+
+> **Disclaimer:** The numbers below are theoretical estimates based on the subprocess architecture. They are not guarantees and will vary based on hardware, kernel configuration, and workload characteristics. Always load-test for your specific environment.
+
+Each SSH session spawns an isolated `boundary connect` subprocess. There is no hard-coded concurrency limit — the practical ceiling is determined by OS and container resources:
+
+| Resource | Default Limit | Estimated Sessions | Notes |
+|---|---|---|---|
+| **File descriptors** | 1024 (soft) | ~250 per container | Each session uses ~4 FDs (subprocess pipes + SSH conn + WebSocket). Raise with `ulimit -n 65535` for ~16k theoretical. |
+| **Memory** | 1 GB container | ~30–60 per container | Each `boundary connect` process consumes ~15–30 MB RSS. |
+| **OS processes** | ~30k (`ulimit -u`) | Not the bottleneck | Memory and FDs are exhausted well before the process limit. |
+| **Boundary Worker** | Varies | Depends on worker config | The Worker has its own session capacity; consult [Boundary docs](https://developer.hashicorp.com/boundary). |
+
+**Horizontal scaling:** The BFF is stateless — sessions are pinned to individual subprocesses, not to shared in-process state. Deploy multiple backend replicas behind a load balancer (sticky sessions not required for new connections) to scale linearly.
+
+**Trade-off vs. in-process SDK:** The subprocess model uses more memory per session (~15 MB vs ~1 MB for a goroutine) in exchange for fault isolation — a crashed session cannot affect the main process or other users.
+
 ## Known Limitations — Hermetic VM Exposure
 
 When running the demo on a hermetic (headless) VM and exposing ports via a tunnel service (e.g. Traefik, Cloudflare Tunnel, or Devin's `deploy expose`), be aware of the following:
