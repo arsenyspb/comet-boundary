@@ -74,11 +74,8 @@ func DialThroughBoundary(ctx context.Context, authzToken, sshUser, sshPass strin
 		"-authz-token", authzToken,
 	)
 	// Own process group so we can signal the entire tree on teardown.
-	// Pdeathsig ensures the child is killed if the BFF crashes.
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid:   true,
-		Pdeathsig: syscall.SIGTERM,
-	}
+	// Pdeathsig (on Linux) ensures the child is killed if the BFF crashes.
+	setSysProcAttr(cmd)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
