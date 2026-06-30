@@ -17,6 +17,14 @@ Before submitting any code or declaring a task complete, you **MUST** ensure the
 
 ## 🏗️ Architectural Mapping
 
+### Build Modes (CRITICAL CONSTRAINT)
+Comet Boundary maintains two strictly separate deployment architectures. **Never attempt to merge these.**
+
+| Mode | Architecture | Purpose |
+| :--- | :--- | :--- |
+| **Local Dev** (`make replay`) | Two containers: Vite frontend (5173) + Go backend (8080) | Preserves Vite HMR for frontend development. |
+| **Production** (GHCR/Helm) | Single container: Go binary embeds React SPA (`embed.FS`) | Single artifact distribution via Dockerfile multi-stage build. |
+
 ### Directory Overview
 - `server/`: Go-based SSH/RDP proxy. Uses Chi and the Boundary Go SDK.
 - `client/`: React + Vite + TypeScript frontend. UI for terminal and RDP canvas.

@@ -1,202 +1,54 @@
-# Comet Boundary Prototype
+# Comet Boundary ☄️
 
-A web-based client for [HashiCorp Boundary](https://www.boundaryproject.io/) designed for restricted "Comet" environments. Enables secure SSH access directly from the browser without requiring native thick clients.
+[![Tier 1 CI](https://github.com/arsenyspb/comet-boundary/actions/workflows/tier1.yml/badge.svg)](https://github.com/arsenyspb/comet-boundary/actions/workflows/tier1.yml)
+[![Tier 2 Integration CI](https://github.com/arsenyspb/comet-boundary/actions/workflows/tier2.yml/badge.svg)](https://github.com/arsenyspb/comet-boundary/actions/workflows/tier2.yml)
+[![Release](https://github.com/arsenyspb/comet-boundary/actions/workflows/release.yml/badge.svg)](https://github.com/arsenyspb/comet-boundary/actions/workflows/release.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-> [!CAUTION]
-> **SECURITY WARNING: DEMO MODE ONLY**
-> This project is a **technical prototype** and is strictly intended for demonstration purposes. It contains several architectural and security trade-offs (such as disabled host key verification and shared static credentials) designed for ease of setup in a development environment. 
-> 
-> **DO NOT use this in production or with sensitive data.** For a detailed breakdown of current deficiencies and the security roadmap, see [CONTRIBUTING.md](./CONTRIBUTING.md).
+A zero-install, web-based remote access client for [HashiCorp Boundary](https://www.boundaryproject.io/).
 
-## Architecture (Slice 1: SSH)
+> **Note on Naming:** This project is named after the [Comet programming technique](https://en.wikipedia.org/wiki/Comet_(programming)), an umbrella term for long-held HTTP requests allowing a web server to push data to a browser. This project is a proactive community contribution, and feedback is highly welcomed!
 
-The system is split into a **Control Plane** (identity & authorization) and a **Data Plane** (secure traffic proxying). Since browsers cannot speak Boundary's native protocols, the Go Backend acts as a **Trusted Intermediary**.
+### Why use this?
+In enterprise environments with highly restricted laptops, end users often cannot install native desktop clients like the Boundary Desktop app. Comet Boundary solves this by providing secure SSH (and soon RDP) access directly from the browser. It acts as a trusted intermediary, seamlessly translating web traffic into Boundary's native protocols without requiring heavy operators or custom local installations.
 
-### Component Overview
-```mermaid
-graph TB
-    subgraph Browser ["User Browser"]
-        UI["Web UI (React/xterm.js)"]
-    end
+---
 
-    subgraph Docker ["Docker Compose Network"]
-        subgraph App ["Application Services (BFF)"]
-            Front["Frontend (Vite Proxy)"]
-            Back["Backend Proxy (Go SDK)"]
-        end
+## Deployment Flow
 
-        subgraph Boundary ["Boundary Infrastructure"]
-            Cont["Controller (Control Plane)"]
-            Work["Worker (Data Plane)"]
-            DB[(Postgres)]
-        end
-
-        subgraph HVD ["Host Abstraction"]
-            Catalog["Host Catalog"]
-            SetA["Team A Host Set"]
-            SetB["Team B Host Set"]
-        end
-
-        subgraph Targets ["Resource Targets"]
-            H1["ssh-host-1"]
-            H2["ssh-host-2"]
-        end
-    end
-
-    UI -- "HTTPS/WSS" --> Front
-    UI -- "HTTP (via Proxy)" --> Cont
-    Front -- "Internal Proxy" --> Back
-    Back -- "Tunnel (apiproxy)" --> Work
-    Cont -- "State" --> DB
-    Work -- "Routed Access" --> SetA
-    Work -- "Routed Access" --> SetB
-    SetA -- "HA/Isolation" --> H1
-    SetB -- "HA/Isolation" --> H2
-
-    %% Styling for light gray background
-    style Browser fill:#f9f9f9,stroke:#d3d3d3
-    style Docker fill:#f9f9f9,stroke:#d3d3d3
-    style App fill:#f9f9f9,stroke:#d3d3d3
-    style Boundary fill:#f9f9f9,stroke:#d3d3d3
-    style Targets fill:#f9f9f9,stroke:#d3d3d3
+```text
+Terraform Module ──(outputs)──> Helm Chart values.yaml ──(deploys)──> Comet Container
+     │ configures                                                          │
+     v                                                                     v
+Boundary Cluster (existing) <──────(boundary connect subprocess)───── Comet Container
+     │
+     v
+SSH Targets (existing)
 ```
 
-### Communication Planes
-1.  **Identity & Control Plane (Browser -> Backend/Controller):** 
-    *   **Login:** The Browser sends LDAP or Password credentials to the Backend's `/auth/login` endpoint. The Backend uses the Boundary Go SDK to exchange these for a Boundary `token`.
-    *   **Discovery:** Once logged in, the Browser uses the `token` to call the Boundary Controller directly (via Vite proxy) to fetch `GET /v1/targets`. This leverages Boundary's RBAC to show only authorized targets.
-    *   **Authorization:** The Browser calls `POST /v1/targets/:id:authorize-session` directly against the Controller to receive a short-lived `authorization_token`.
-2.  **Data Plane (BFF -> Worker):** The Browser establishes a WebSocket to the Backend, passing the `authorization_token`. The Backend uses `apiproxy` to create a secure tunnel to the Boundary Worker and pipes the SSH stream.
+---
 
-### Connection Flow
-```mermaid
-sequenceDiagram
-    participant User as Browser (xterm.js)
-    participant LDAP as OpenLDAP
-    participant Back as Backend (Go Proxy)
-    participant Bound as Boundary (Controller)
-    participant Work as Boundary (Worker)
-    participant Host as Target Host (SSH)
+## Quick Start
 
-    Note over User,Back: Phase 1: Identity (Proxied via BFF)
-    User->>Back: POST /auth/login (alice/changeme)
-    Back->>Bound: SDK: Authenticate (LDAP)
-    Bound->>LDAP: Bind User
-    LDAP-->>Bound: Success
-    Bound-->>Back: session_token
-    Back-->>User: token (JWT)
-
-    Note over User,Bound: Phase 2: Discovery & Authz
-    User->>Bound: GET /v1/targets (using token)
-    Bound-->>User: Team-Scoped Targets (RBAC filtered)
-    User->>Bound: GET /v1/host-sets/:id/hosts
-    Bound-->>User: List of physical hosts in set
-    User->>Bound: POST /v1/targets/:id:authorize-session (host_id pinned)
-    Bound-->>User: authorization_token + worker_endpoint
-
-    Note over User,Host: Phase 3: Data Plane (Managed Tunnel)
-    User->>Back: WebSocket /ws/ssh (authorization_token)
-    Back->>Back: Start SDK Bridge (apiproxy)
-    Back->>Work: Negotiate Tunnel (Mutual TLS)
-    Work-->>Back: Local Loopback Ready (127.0.0.1:port)
-    
-    Note right of Back: [DEBT] BFF injects static credentials
-    Back->>Back: Dial SSH via Loopback
-    Back->>Work: (SDK Tunnels Traffic)
-    Work->>Host: Connect to Target Host
-    Host-->>Work: Handshake Success
-    Work-->>Back: (Tunnel Stream Established)
-    Back-->>User: WebSocket Stream Established
-    User->>Host: Secure Shell Session (Bi-directional)
+### For Kubernetes Adopters
+Deploy the unified container into your Kubernetes cluster via Helm:
+```bash
+helm install comet-boundary oci://ghcr.io/arsenyspb/charts/comet-boundary --version 0.1.0
 ```
+> See the [Terraform Module README](./terraform/comet-boundary-integration/README.md) for instructions on provisioning Boundary resources for the Comet container.
 
-- **Backend:** Go (Chi) + Boundary SDK. Bridges Boundary TCP sessions to WebSockets.
-- **Frontend:** React + Tailwind CSS + xterm.js.
-- **Proxying:** Uses Boundary's `apiproxy` to establish identity-aware tunnels.
-- **Auto-Discovery:** The setup script extracts dynamic credentials from Docker logs and injects them into the environment.
-
-## Prerequisites
-Before running the demo, ensure you have:
-1. **macOS** (The setup scripts are currently optimized for macOS).
-2. **Homebrew** (`brew`) installed.
-3. **Docker** (Docker Desktop or OrbStack) installed and running.
-
-## One-Button Demo Replay
-The fastest way to establish a working demo environment is using the provided Makefile. The process is fully "hermetic" and will verify/install missing system dependencies (like `jq`, `go`, and `node`) via Homebrew automatically.
-
+### For Local Evaluation (One-Button Demo)
+To quickly spin up a fully hermetic demo environment (includes Boundary, OpenLDAP, Postgres, and the Comet App) on macOS:
 ```bash
 make replay
 ```
+This command installs dependencies, bootstraps infrastructure, seeds LDAP test users (`alice`, `bob`, `chris`), and spins up the web UI at `http://localhost:5173`.
 
-This command performs the following sequence:
-1.  **Clean:** Wipes all Docker volumes and logs.
-2.  **Dependencies (`deps`):** Runs `./scripts/00_check-deps.sh` to ensure `brew`, `jq`, `go`, `node`, and Docker are available.
-3.  **Infrastructure & Setup:**
-    *   Starts core infrastructure (Postgres, Boundary, SSH Target).
-    *   Runs `./scripts/01_setup-boundary.sh` to initialize Boundary and generate credentials.
-4.  **Start:** Launches the Backend and Frontend services **inside Docker** using the generated credentials.
-5.  **Verify:** Executes `./scripts/02_verify-setup.sh` which validates Docker healthchecks and runs backend unit tests.
+---
 
-## Technical Details
-- **HVD Host Abstraction:** The demo uses a production-grade resource hierarchy. Targets do not have direct addresses; instead, they point to **Host Sets**, which contain **Host Resources** mapping to the physical `ssh-host-X` containers.
-- **Team Isolation:** The environment is scoped via Boundary RBAC:
-    - **Alice** (Team A) -> Only sees "A Team Host" -> Connects to `ssh-host-1`.
-    - **Bob** (Team B) -> Only sees "B Team Host" -> Connects to `ssh-host-2`.
-- **SSH Credentials:** The demo is hardcoded to connect to targets as `boundary-user` with password `password`.
-- **UI Login:** LDAP users can log in with their directory credentials:
-    - `alice` / `changeme`
-    - `bob` / `changeme`
-- **Boundary API:** Accessible at [http://localhost:9200](http://localhost:9200).
+## Documentation
+- **Architecture & Build Modes:** Technical deep dives are available in the [Architecture Guide](./docs/architecture.md) and [AGENTS.md](./AGENTS.md).
+- **HVD Alignment:** Built strictly according to [HashiCorp Validated Designs](./docs/hvd/boundary-operating-guide.md).
 
-## Scaling Considerations
-
-> **Disclaimer:** The numbers below are theoretical estimates based on the subprocess architecture. They are not guarantees and will vary based on hardware, kernel configuration, and workload characteristics. Always load-test for your specific environment.
-
-Each SSH session spawns an isolated `boundary connect` subprocess. There is no hard-coded concurrency limit — the practical ceiling is determined by OS and container resources:
-
-| Resource | Default Limit | Estimated Sessions | Notes |
-|---|---|---|---|
-| **File descriptors** | 1024 (soft) | ~250 per container | Each session uses ~4 FDs (subprocess pipes + SSH conn + WebSocket). Raise with `ulimit -n 65535` for ~16k theoretical. |
-| **Memory** | 1 GB container | ~30–60 per container | Each `boundary connect` process consumes ~15–30 MB RSS. |
-| **OS processes** | ~30k (`ulimit -u`) | Not the bottleneck | Memory and FDs are exhausted well before the process limit. |
-| **Boundary Worker** | Varies | Depends on worker config | The Worker has its own session capacity; consult [Boundary docs](https://developer.hashicorp.com/boundary). |
-
-**Horizontal scaling:** The BFF is stateless — sessions are pinned to individual subprocesses, not to shared in-process state. Deploy multiple backend replicas behind a load balancer (sticky sessions not required for new connections) to scale linearly.
-
-**Trade-off vs. in-process SDK:** The subprocess model uses more memory per session (~15 MB vs ~1 MB for a goroutine) in exchange for fault isolation — a crashed session cannot affect the main process or other users.
-
-## Known Limitations — Hermetic VM Exposure
-
-When running the demo on a hermetic (headless) VM and exposing ports via a tunnel service (e.g. Traefik, Cloudflare Tunnel, or Devin's `deploy expose`), be aware of the following:
-
-### Tunnel Basic Auth breaks SPA Fetch API calls
-
-Most tunnel services authenticate external access by embedding HTTP Basic Auth credentials in the URL (`https://user:token@tunnel-host`). This works for simple page serving but **breaks any Single-Page Application that uses the Fetch API** — the [Fetch specification](https://fetch.spec.whatwg.org/#concept-request-url) rejects requests when the page's origin URL includes credentials.
-
-**Affected:** The Boundary Admin UI (port 9200) is an Ember.js SPA — it shows "ERROR" when accessed through a Basic Auth tunnel because its `/v1/...` API calls are rejected by the browser.
-
-**Not affected:** The Comet Boundary frontend (port 5173) works through tunnels because it uses Vite's server-side proxy for API calls (the browser never makes cross-origin fetch requests directly).
-
-### Recommended development approaches
-
-| Approach | Boundary UI | Comet Frontend | Notes |
-|----------|-------------|----------------|-------|
-| **Mac-bound development** (preferred) | `localhost:9200` | `localhost:5173` | Full access to all services. Run `make replay` locally. |
-| **VNC / Remote Desktop** | `localhost:9200` via VNC | `localhost:5173` via VNC | Access VM desktop directly. No tunnel auth conflicts. |
-| **Tunnel exposure** | Not functional (Fetch API limitation) | Functional (with `allowedHosts: true`) | Only the Comet frontend works through tunnels. |
-
-### Vite host allowlisting
-
-Vite 6+ blocks requests from unrecognized hostnames. When exposing the frontend via a tunnel, set `server.allowedHosts: true` in `client/vite.config.ts` or the dev server will return `403 Blocked request`.
-
-### Tunnel proxy Authorization header conflict
-
-Tunnel proxies that use HTTP Basic Auth intercept the `Authorization` header at the proxy level. If the application sends its own tokens via `Authorization`, the proxy will reject them with `401`. Use a custom header (e.g. `X-Boundary-Token`) to avoid the conflict.
-
-## Roadmap & Project Status
-The project roadmap, including feature development (Slice 2 RDP) and architectural alignment (HVD), is managed dynamically via GitHub Issues.
-
-- **Active Backlog:** [GitHub Issues](https://github.com/arsenyspb/comet-boundary/issues)
-- **HVD Alignment Tracker:** [Issues labeled `hvd-alignment`](https://github.com/arsenyspb/comet-boundary/issues?q=is%3Aopen+is%3Aissue+label%3Ahvd-alignment)
-
-For a detailed breakdown of technical debt and implementation standards, see [CONTRIBUTING.md](./CONTRIBUTING.md).
+## Contributing
+Interested in contributing, tracking known technical debt, or viewing the project roadmap? Please read our [Contributing Guide](./CONTRIBUTING.md) to get started!

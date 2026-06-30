@@ -22,3 +22,11 @@ To contribute:
 3.  **Issues:** Pick an issue from the backlog or create a new one to propose a change.
 4.  **Validate:** Ensure `./scripts/02_verify-setup.sh` passes before and after your changes.
 
+## Build Modes & Architecture
+Comet Boundary operates under two distinct architectural modes depending on the environment. **Do not attempt to merge these paths.**
+
+| Mode | Architecture | Purpose |
+| :--- | :--- | :--- |
+| **Local Dev** (`make replay`) | Two services: Vite dev server + Go backend | Preserves Vite HMR (Hot Module Replacement) and React fast refresh. |
+| **Production** (Helm/GHCR) | Single binary: Go embeds built React SPA via `embed.FS` | One image, one port (8080). Simple, secure, and portable distribution. |
+
