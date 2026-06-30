@@ -1,16 +1,23 @@
-# Build stage
-FROM golang:1.26-alpine AS builder
-
+# Stage 1: Build the React Frontend
+FROM node:20-alpine AS frontend-builder
 WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
+COPY client/package*.json client/
+RUN cd client && npm ci
+COPY client/ client/
+RUN cd client && npm run build
 
-COPY . .
-RUN go build -o server_bin main.go
+# Stage 2: Build the Go Backend (with embedded frontend)
+FROM golang:1.26-alpine AS backend-builder
+WORKDIR /app
+COPY server/go.mod server/go.sum server/
+RUN cd server && go mod download
+COPY server/ server/
+# Copy the built frontend into server/static
+COPY --from=frontend-builder /app/client/dist/ /app/server/static/
+RUN cd server && go build -o server_bin main.go
 
-# Final stage
+# Stage 3: Final Image
 FROM alpine:latest
-
 # Install Boundary CLI for subprocess-based tunnel management.
 ARG BOUNDARY_VERSION=0.19.0
 RUN apk add --no-cache curl unzip \
@@ -21,7 +28,7 @@ RUN apk add --no-cache curl unzip \
     && chmod +x /usr/local/bin/boundary
 
 WORKDIR /app
-COPY --from=builder /app/server_bin .
+COPY --from=backend-builder /app/server/server_bin .
 
 EXPOSE 8080
 ENTRYPOINT ["./server_bin"]

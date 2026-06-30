@@ -41,14 +41,33 @@ loginShell: /bin/bash
 homeDirectory: /home/bob
 mail: bob@comet.example
 
+# User: chris (member of engineering)
+dn: uid=chris,ou=people,dc=comet,dc=example
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: chris
+sn: Engineer
+givenName: Chris
+cn: Chris Engineer
+displayName: Chris Engineer
+uidNumber: 10002
+gidNumber: 10002
+userPassword: changeme
+loginShell: /bin/bash
+homeDirectory: /home/chris
+mail: chris@comet.example
+
 # Group: team-a
 dn: cn=team-a,ou=groups,dc=comet,dc=example
 objectClass: groupOfNames
 cn: team-a
 member: uid=alice,ou=people,dc=comet,dc=example
+member: uid=chris,ou=people,dc=comet,dc=example
 
 # Group: team-b
 dn: cn=team-b,ou=groups,dc=comet,dc=example
 objectClass: groupOfNames
 cn: team-b
 member: uid=bob,ou=people,dc=comet,dc=example
+member: uid=chris,ou=people,dc=comet,dc=example

@@ -1,0 +1,32 @@
+# Default values for comet-boundary.
+
+image:
+  repository: ghcr.io/arsenyspb/comet-boundary
+  tag: "0.1.0"
+
+boundary:
+  # The address of the Boundary controller
+  address: "http://boundary-controller:9200"
+  # The ID of the auth method to use
+  authMethodId: "ampw_12345"
+  # Optional LDAP auth method ID
+  ldapAuthMethodId: ""
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

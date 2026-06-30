@@ -1,0 +1,44 @@
+name: Tier 1 CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  go-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+      - name: Run Go checks
+        run: |
+          cd server
+          go vet ./...
+          go test -v ./...
+
+  react-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run React checks
+        run: |
+          cd client
+          npm ci
+          npm run lint
+          npm run test
+          npm run build
+
+  helm-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Run Helm lint
+        run: helm lint charts/comet-boundary/

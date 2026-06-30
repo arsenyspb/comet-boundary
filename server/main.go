@@ -16,11 +16,16 @@ package main
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
+	"strings"
 
 	"github.com/arsenyspb/comet-boundary/pkg/auth"
 	"github.com/arsenyspb/comet-boundary/pkg/proxy"
@@ -153,6 +158,18 @@ type SessionResponse struct {
 	Endpoint           string `json:"endpoint"`
 }
 
+//go:embed all:static
+var staticFiles embed.FS
+
+func boundaryReverseProxy(targetAddr string) http.HandlerFunc {
+	target, _ := url.Parse(targetAddr)
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	return func(w http.ResponseWriter, r *http.Request) {
+		r.URL.Path = strings.TrimPrefix(r.URL.Path, "/boundary")
+		proxy.ServeHTTP(w, r)
+	}
+}
+
 func setupRouter() *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
@@ -171,7 +188,7 @@ func setupRouter() *chi.Mux {
 
 	authMethodID := os.Getenv("BOUNDARY_AUTH_METHOD_ID")
 	if authMethodID == "" {
-		authMethodID = "ampw_8nDOy6GZUQ"
+		log.Fatal("BOUNDARY_AUTH_METHOD_ID environment variable is required")
 	}
 
 	log.Printf("Backend initialized with Boundary Addr: %s", boundaryAddr)
@@ -182,8 +199,17 @@ func setupRouter() *chi.Mux {
 		log.Fatalf("Failed to create authenticator: %v", err)
 	}
 
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Comet Boundary Prototype Backend is running"))
+	r.HandleFunc("/boundary/*", boundaryReverseProxy(boundaryAddr))
+
+	staticSubFS, _ := fs.Sub(staticFiles, "static")
+	fileServer := http.FileServer(http.FS(staticSubFS))
+
+	r.Get("/*", func(w http.ResponseWriter, req *http.Request) {
+		path := strings.TrimPrefix(req.URL.Path, "/")
+		if _, err := fs.Stat(staticSubFS, path); os.IsNotExist(err) && path != "" {
+			req.URL.Path = "/"
+		}
+		fileServer.ServeHTTP(w, req)
 	})
 
 	r.Post("/auth/login", func(w http.ResponseWriter, r *http.Request) {

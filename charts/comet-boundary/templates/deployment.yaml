@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "comet-boundary.fullname" . }}
+  labels:
+    app: {{ include "comet-boundary.name" . }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ include "comet-boundary.name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "comet-boundary.name" . }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: BOUNDARY_ADDR
+              value: "{{ .Values.boundary.address }}"
+            - name: BOUNDARY_AUTH_METHOD_ID
+              value: "{{ .Values.boundary.authMethodId }}"
+            - name: BOUNDARY_LDAP_AUTH_METHOD_ID
+              value: "{{ .Values.boundary.ldapAuthMethodId }}"
+            - name: PORT
+              value: "8080"
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

@@ -44,4 +44,3 @@ func TestLogin_MissingCredentials(t *testing.T) {
 		t.Errorf("Expected status BadRequest (400) for missing credentials; got %v", res.Status)
 	}
 }
-

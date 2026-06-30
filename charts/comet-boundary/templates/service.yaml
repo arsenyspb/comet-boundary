@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "comet-boundary.fullname" . }}
+  labels:
+    app: {{ include "comet-boundary.name" . }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app: {{ include "comet-boundary.name" . }}

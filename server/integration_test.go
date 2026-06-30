@@ -105,10 +105,10 @@ func TestLDAPAuthAndTargetDiscovery(t *testing.T) {
 	}
 
 	cases := []struct {
-		user          string
-		password      string
-		expectTarget  string
-		denyTarget    string
+		user         string
+		password     string
+		expectTarget string
+		denyTarget   string
 	}{
 		{user: "alice", password: "changeme", expectTarget: "A Team Host", denyTarget: "B Team Host"},
 		{user: "bob", password: "changeme", expectTarget: "B Team Host", denyTarget: "A Team Host"},

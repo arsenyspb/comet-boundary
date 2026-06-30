@@ -1,0 +1,6 @@
+apiVersion: v2
+name: comet-boundary
+description: Browser-based SSH client integrated with HashiCorp Boundary
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

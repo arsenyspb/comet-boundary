@@ -1,0 +1,23 @@
+name: Tier 2 Integration CI
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+      - name: Run Tier 2 Integration tests
+        run: |
+          docker compose up -d postgres setup
+          docker compose up -d controller worker openldap ssh-target-1 ssh-target-2
+          bash scripts/01_setup-boundary.sh
+          source .env
+          docker compose up -d --build backend
+          cd server && go test -tags integration -v ./...
