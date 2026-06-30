@@ -35,71 +35,76 @@ const App: React.FC = () => {
 
   const ldapAuthMethodId = import.meta.env.VITE_LDAP_AUTH_METHOD_ID || '';
 
-  const fetchHosts = async (targetId: string) => {
-    try {
-      setStatus('Discovering hosts...');
-      setHosts([]);
-      setSelectedHost('');
-      const targetResp = await axios.get(`/boundary/v1/targets/${targetId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const hostSetIds = targetResp.data.item.host_set_ids || [];
-
-      const allHosts: BoundaryHost[] = [];
-      for (const hostSetId of hostSetIds) {
-        const hsResp = await axios.get(`/boundary/v1/host-sets/${hostSetId}?list_hosts=true`, {
+  useEffect(() => {
+    const fetchTargets = async () => {
+      setStatus('Discovering targets...');
+      try {
+        const resp = await axios.get('/boundary/v1/targets?recursive=true&scope_id=global', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        if (hsResp.data.item.hosts) {
-          allHosts.push(...hsResp.data.item.hosts);
-        }
+        const discoveredTargets = resp.data.items || [];
+        setTargets(discoveredTargets);
+        setStatus('Targets discovered');
+        setSelectedTarget('');
+      } catch (err: unknown) {
+        const axErr = err as { response?: { data?: { message?: string } }; message?: string };
+        console.error('Discovery: Failed!', err);
+        setError(`Failed to discover targets: ${axErr.response?.data?.message || axErr.message}`);
+        setStatus('Error');
       }
+    };
 
-      setHosts(allHosts);
-      if (allHosts.length === 1) {
-        setSelectedHost(allHosts[0].id);
-      } else {
-        setSelectedHost('');
-      }
-      setStatus('Hosts discovered');
-    } catch (err: unknown) {
-      console.error('Failed to fetch hosts:', err);
-      setStatus('Target selected');
-    }
-  };
-
-  const fetchTargets = async () => {
-    setStatus('Discovering targets...');
-    try {
-      const resp = await axios.get('/boundary/v1/targets?recursive=true&scope_id=global', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const discoveredTargets = resp.data.items || [];
-      setTargets(discoveredTargets);
-      setStatus('Targets discovered');
-      setSelectedTarget('');
-    } catch (err: unknown) {
-      const axErr = err as { response?: { data?: { message?: string } }; message?: string };
-      console.error('Discovery: Failed!', err);
-      setError(`Failed to discover targets: ${axErr.response?.data?.message || axErr.message}`);
-      setStatus('Error');
-    }
-  };
-
-  useEffect(() => {
     if (isLoggedIn && token) {
       fetchTargets();
     }
   }, [isLoggedIn, token]);
 
   useEffect(() => {
+    const fetchHosts = async (targetId: string) => {
+      try {
+        setStatus('Discovering hosts...');
+        setHosts([]);
+        setSelectedHost('');
+        const targetResp = await axios.get(`/boundary/v1/targets/${targetId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const hostSetIds = targetResp.data.item.host_set_ids || [];
+
+        const allHosts: BoundaryHost[] = [];
+        for (const hostSetId of hostSetIds) {
+          const hsResp = await axios.get(`/boundary/v1/host-sets/${hostSetId}?list_hosts=true`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (hsResp.data.item.hosts) {
+            allHosts.push(...hsResp.data.item.hosts);
+          }
+        }
+
+        setHosts(allHosts);
+        if (allHosts.length === 1) {
+          setSelectedHost(allHosts[0].id);
+        } else {
+          setSelectedHost('');
+        }
+        setStatus('Hosts discovered');
+      } catch (err: unknown) {
+        console.error('Failed to fetch hosts:', err);
+        setStatus('Target selected');
+      }
+    };
+
     if (selectedTarget && token) {
       fetchHosts(selectedTarget);
-    } else {
+    }
+  }, [selectedTarget, token]);
+
+  const handleTargetChange = (t: string) => {
+    setSelectedTarget(t);
+    if (!t) {
       setHosts([]);
       setSelectedHost('');
     }
-  }, [selectedTarget, token]);
+  };
 
   const handleLoginSuccess = (newToken: string) => {
     setToken(newToken);
@@ -184,7 +189,7 @@ const App: React.FC = () => {
           <TargetSelector
             targets={targets}
             selectedTarget={selectedTarget}
-            onTargetChange={setSelectedTarget}
+            onTargetChange={handleTargetChange}
             hosts={hosts}
             selectedHost={selectedHost}
             onHostChange={setSelectedHost}

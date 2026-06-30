@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 )
 
 func TestRootHandler(t *testing.T) {
+	os.Setenv("BOUNDARY_AUTH_METHOD_ID", "test_auth_method")
+	defer os.Unsetenv("BOUNDARY_AUTH_METHOD_ID")
 	r := setupRouter()
 	ts := httptest.NewServer(r)
 	defer ts.Close()
@@ -23,6 +26,8 @@ func TestRootHandler(t *testing.T) {
 }
 
 func TestLogin_MissingCredentials(t *testing.T) {
+	os.Setenv("BOUNDARY_AUTH_METHOD_ID", "test_auth_method")
+	defer os.Unsetenv("BOUNDARY_AUTH_METHOD_ID")
 	r := setupRouter()
 	ts := httptest.NewServer(r)
 	defer ts.Close()
