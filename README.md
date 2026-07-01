@@ -44,6 +44,8 @@ make replay
 ```
 This command installs dependencies, bootstraps infrastructure, seeds LDAP test users (`alice`, `bob`, `chris`), and spins up the web UI at `http://localhost:5173`.
 
+> **Want to test Kubernetes locally?** Check out the [Interactive Minikube Demo](kube-demo.ipynb) (a Jupyter Notebook) to explore bridging this local setup into a local cluster.
+
 ---
 
 ## Documentation

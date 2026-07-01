@@ -46,8 +46,10 @@ const LoginForm: React.FC<LoginFormProps> = ({
     setError(null);
     try {
       const payload: Record<string, string> = { login_name: loginName, password };
-      if (authMethod === 'ldap' && ldapAuthMethodId) {
-        payload.auth_method_id = ldapAuthMethodId;
+      if (authMethod === 'ldap') {
+        payload.auth_method_id = ldapAuthMethodId || 'ldap';
+      } else {
+        payload.auth_method_id = 'password';
       }
       const resp = await axios.post(`/auth/login`, payload);
       onLoginSuccess(resp.data.token);

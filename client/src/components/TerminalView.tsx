@@ -74,6 +74,12 @@ const TerminalView: React.FC<TerminalViewProps> = ({ session, setStatus, setErro
         ssh_user: session.sshUser,
         ssh_password: session.sshPassword,
       }));
+      // Send initial terminal dimensions to correct any default mismatch
+      ws.send(JSON.stringify({
+        type: 'resize',
+        cols: term.cols,
+        rows: term.rows,
+      }));
     };
 
     ws.onmessage = (event) => {
@@ -102,6 +108,12 @@ const TerminalView: React.FC<TerminalViewProps> = ({ session, setStatus, setErro
       }
     });
 
+    const resizeSubscription = term.onResize((size) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'resize', cols: size.cols, rows: size.rows }));
+      }
+    });
+
     xtermRef.current = term;
 
     const handleResize = () => fitAddon.fit();
@@ -110,6 +122,7 @@ const TerminalView: React.FC<TerminalViewProps> = ({ session, setStatus, setErro
     return () => {
       cancelled = true;
       window.removeEventListener('resize', handleResize);
+      resizeSubscription.dispose();
       term.dispose();
       ws.close();
     };

@@ -14,6 +14,12 @@ spec:
       labels:
         app: {{ include "comet-boundary.name" . }}
     spec:
+      {{- if .Values.boundary.workerIp }}
+      hostAliases:
+        - ip: "{{ .Values.boundary.workerIp }}"
+          hostnames:
+          - "worker"
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

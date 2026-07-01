@@ -11,6 +11,12 @@ boundary:
   authMethodId: "ampw_12345"
   # Optional LDAP auth method ID
   ldapAuthMethodId: ""
+  # Optional Worker IP for minikube bridging
+  workerIp: ""
+
+service:
+  type: ClusterIP
+  port: 8080
 
 ingress:
   enabled: false

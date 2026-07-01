@@ -92,7 +92,7 @@ func handleSSH(w http.ResponseWriter, r *http.Request) {
 	stdout, _ := sess.StdoutPipe()
 	stderr, _ := sess.StderrPipe()
 
-	if err := sess.RequestPty("xterm", 80, 24, ssh.TerminalModes{}); err != nil {
+	if err := sess.RequestPty("xterm", 24, 80, ssh.TerminalModes{}); err != nil {
 		log.Printf("PTY request error: %v", err)
 		return
 	}
@@ -191,8 +191,14 @@ func setupRouter() *chi.Mux {
 		log.Fatal("BOUNDARY_AUTH_METHOD_ID environment variable is required")
 	}
 
+	ldapAuthMethodID := os.Getenv("BOUNDARY_LDAP_AUTH_METHOD_ID")
+	if ldapAuthMethodID == "" {
+		log.Printf("Warning: BOUNDARY_LDAP_AUTH_METHOD_ID is not set")
+	}
+
 	log.Printf("Backend initialized with Boundary Addr: %s", boundaryAddr)
 	log.Printf("Backend initialized with Auth Method ID: %s", authMethodID)
+	log.Printf("Backend initialized with LDAP Auth Method ID: %s", ldapAuthMethodID)
 
 	authenticator, err := auth.NewAuthenticator(boundaryAddr, authMethodID)
 	if err != nil {
@@ -224,7 +230,14 @@ func setupRouter() *chi.Mux {
 			return
 		}
 
-		token, err := authenticator.Authenticate(r.Context(), req.LoginName, req.Password, req.AuthMethodID)
+		resolvedAuthMethodID := req.AuthMethodID
+		if resolvedAuthMethodID == "ldap" {
+			resolvedAuthMethodID = ldapAuthMethodID
+		} else if resolvedAuthMethodID == "password" || resolvedAuthMethodID == "" {
+			resolvedAuthMethodID = authMethodID
+		}
+
+		token, err := authenticator.Authenticate(r.Context(), req.LoginName, req.Password, resolvedAuthMethodID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
