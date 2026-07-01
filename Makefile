@@ -9,6 +9,8 @@ ifneq ("$(wildcard .env)","")
     export
 endif
 
+COMPOSE := $(shell command -v docker-compose 2>/dev/null || echo "docker compose")
+
 # --- PRIMARY WORKFLOW ---
 
 # The "One-Button" Replay: Cleans, verifies dependencies, bootstraps, and starts the demo.
@@ -26,7 +28,7 @@ deps:
 # 1. Bootstrap the infrastructure and initialize Boundary configuration
 setup:
 	@echo "Step 1: Starting infrastructure and bootstrapping Boundary..."
-	docker-compose up -d postgres openldap controller worker ssh-target-1 ssh-target-2 setup
+	$(COMPOSE) up -d postgres openldap controller worker ssh-target-1 ssh-target-2 setup
 	./scripts/01_setup-boundary.sh
 	@echo "Syncing backend dependencies..."
 	cd server && go mod tidy
@@ -34,7 +36,7 @@ setup:
 # 2. Start the Backend Proxy and Frontend Application via Docker
 start:
 	@echo "Step 2: Starting Backend and Frontend services..."
-	docker-compose up -d --build backend frontend
+	$(COMPOSE) up -d --build backend frontend
 
 # 3. Verify the entire environment
 verify:
@@ -45,15 +47,15 @@ verify:
 
 # Stop all running containers
 stop:
-	docker-compose stop
+	$(COMPOSE) stop
 
 # Completely destroy the environment, including persistent volumes and logs
 clean:
 	@echo "Cleaning up previous state..."
-	docker-compose down -v
+	$(COMPOSE) down -v
 	rm -f server.log client.log server/server_bin .env client/.env.local
 
 # Restart the application services without rebuilding infrastructure
 restart: stop
-	docker-compose up -d --build backend frontend
-	docker-compose up -d postgres openldap controller worker ssh-target-1 ssh-target-2
+	$(COMPOSE) up -d --build backend frontend
+	$(COMPOSE) up -d postgres openldap controller worker ssh-target-1 ssh-target-2

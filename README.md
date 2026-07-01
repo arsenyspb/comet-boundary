@@ -30,6 +30,13 @@ SSH Targets (existing)
 
 ## Quick Start
 
+### Prerequisites
+Before getting started, ensure you have the following installed:
+- **Docker**: Docker Desktop, OrbStack, or a running Docker daemon.
+- **jq**: For JSON processing in setup scripts.
+- **Node.js**: For frontend dependencies.
+- **Go 1.26+**: For backend compilation.
+
 ### For Kubernetes Adopters
 Deploy the unified container into your Kubernetes cluster via Helm:
 ```bash
