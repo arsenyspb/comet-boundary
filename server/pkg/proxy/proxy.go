@@ -130,10 +130,17 @@ func DialThroughBoundary(ctx context.Context, authzToken, sshUser, sshPass strin
 	addr := fmt.Sprintf("127.0.0.1:%s", port)
 	log.Printf("Boundary subprocess ready at %s (PID %d)", addr, cmd.Process.Pid)
 
+	hostKeyCb, err := HostKeyCallback()
+	if err != nil {
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+		cancel()
+		return nil, fmt.Errorf("host key callback: %w", err)
+	}
+
 	sshConfig := &ssh.ClientConfig{
 		User:            sshUser,
 		Auth:            []ssh.AuthMethod{ssh.Password(sshPass)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hostKeyCb,
 		Timeout:         5 * time.Second,
 	}
 
