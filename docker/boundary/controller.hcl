@@ -5,6 +5,25 @@ telemetry {
   disable_hostname          = true
 }
 
+events {
+  audit_enabled       = true
+  sysevents_enabled   = true
+  observations_enable = true
+
+  sink "stderr" {
+    name        = "all-events"
+    description = "All events sent to stderr"
+    event_types = ["*"]
+    format      = "cloudevents-json"
+    audit_config {
+      audit_filter_overrides {
+        sensitive = ""
+      }
+    }
+  }
+}
+
+
 controller {
   name        = "comet-controller"
   description = "Controller for Comet Boundary prototype"

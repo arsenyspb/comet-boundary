@@ -61,3 +61,58 @@ This command installs dependencies, bootstraps infrastructure, seeds LDAP test u
 
 ## Contributing
 Interested in contributing, tracking known technical debt, or viewing the project roadmap? Please read our [Contributing Guide](./CONTRIBUTING.md) to get started!
+
+---
+
+## Boundary Audit Logs: Unredacting PII Experiment (poc-oidc)
+
+### Problem Statement
+The goal of this experiment was to configure HashiCorp Boundary to display actual user emails or usernames (e.g., `alice@comet.example`) instead of opaque internal UUIDs (e.g., `u_p2H90RO0tm`) within the `authorize-session` JSON audit logs. This aligns with visibility goals while respecting the [Boundary Operating Guides Adoption](https://developer.hashicorp.com/validated-designs/boundary-operating-guides-adoption).
+
+### Boundary's Identity Design
+Per the public HVD Operating Guides, Boundary strictly decouples identities:
+- **User:** A resource that represents an individual person or entity for the purposes of access control.
+- **Account:** A representation of a user's identity within a specific authentication method.
+- **Authentication Method:** The mechanism by which users authenticate to Boundary. Can also be integrated with external identity providers like LDAP, Active Directory, or OIDC providers.
+
+Boundary intentionally uses an internal UUID for the `user_id` so a single user can map to multiple authentication methods (IdPs) for flexibility without breaking the immutable audit trail. Because of this, the `user_id` field in the audit log will *always* be the internal UUID and cannot be mapped to an email.
+
+### The Workaround
+A well-documented workaround exists to map IdP claims (like email) to the session context, which then appears in the `auth` block of the audit log.
+- [HCP Boundary Support: Display User Email Instead of Username with OIDC](https://support.hashicorp.com/hc/en-us/articles/33520715513235-How-to-configure-HCP-Boundary-to-Display-User-Email-Instead-of-Username-with-OIDC-Authentication)
+- [Boundary Tutorials: Event Logging - `audit_filter_overrides`](https://developer.hashicorp.com/boundary/tutorials/self-managed-deployment/event-logging#audit_enabled)
+
+To unredact these fields, you can add an `audit_filter_overrides` block to your controller's `sink` configuration:
+```hcl
+events {
+  audit_enabled = true
+  sink "stderr" {
+    # ...
+    audit_config {
+      audit_filter_overrides {
+        sensitive = "" # Disables redaction for sensitive fields
+      }
+    }
+  }
+}
+```
+
+### The Caveat: LDAP vs OIDC (`omitempty`)
+While this workaround functions perfectly for **OIDC**, it is **not reproducible with LDAP** due to how Boundary handles the session context in memory.
+
+If you apply `sensitive = ""` using an LDAP auth method, the `email` and `name` fields completely disappear from the audit JSON. 
+
+**Source Code Reference:**
+If we inspect the Boundary source code at `internal/event/event.go`, the authentication identity fields are defined as:
+```go
+UserEmail string `json:"email,omitempty" class:"sensitive"`
+UserName  string `json:"name,omitempty" class:"sensitive"`
+```
+
+**Why this happens:**
+1. **OIDC:** Boundary automatically copies OIDC identity claims directly into the active session context in memory.
+2. **LDAP:** Boundary does *not* natively populate the `email` and `name` fields into the session context during an LDAP authentication. In memory, they remain empty strings `""`.
+3. **Redaction ON (Default):** The redaction engine sees the `class:"sensitive"` tag and forcefully overwrites the empty strings with `"[REDACTED]"`. Since the strings now have a value, they are marshaled into the JSON output.
+4. **Redaction OFF (`sensitive = ""`):** The redaction engine skips the fields, leaving them as empty strings. When the JSON marshaller processes the event, the `omitempty` struct tag triggers, entirely dropping the `email` and `name` keys from the resulting JSON payload.
+
+Thus, to achieve cleartext email logging natively in Boundary audit events, an OIDC provider is strictly required.

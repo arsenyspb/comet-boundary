@@ -222,7 +222,7 @@ if [ -z "$ORG_ID" ] || [ "$ORG_ID" = "null" ]; then
 fi
 echo "Discovered Org ID: $ORG_ID"
 
-LDAP_AUTH_METHOD_ID=$(curl -s -X POST \
+curl -s -X POST \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d "{
@@ -231,6 +231,7 @@ LDAP_AUTH_METHOD_ID=$(curl -s -X POST \
         \"name\": \"LDAP\",
         \"description\": \"OpenLDAP Identity Provider\",
         \"attributes\": {
+            \"account_attribute_maps\": [\"mail=email\", \"cn=fullName\"],
             \"urls\": [\"ldap://openldap:389\"],
             \"user_dn\": \"ou=people,dc=comet,dc=example\",
             \"user_attr\": \"uid\",
@@ -244,10 +245,12 @@ LDAP_AUTH_METHOD_ID=$(curl -s -X POST \
             \"insecure_tls\": true
         }
     }" \
-    "$BOUNDARY_ADDR/v1/auth-methods" | jq -r '.id')
+    "$BOUNDARY_ADDR/v1/auth-methods" > .ldap_response.json
 
+LDAP_AUTH_METHOD_ID=$(jq -r '.id // empty' .ldap_response.json)
 if [ -z "$LDAP_AUTH_METHOD_ID" ] || [ "$LDAP_AUTH_METHOD_ID" = "null" ]; then
-    echo "Failed to create LDAP auth method."
+    echo "Failed to create LDAP auth method. API Response:"
+    cat .ldap_response.json
     exit 1
 fi
 echo "Created LDAP Auth Method ID: $LDAP_AUTH_METHOD_ID"
@@ -511,7 +514,52 @@ curl -s -X POST \
 
 echo "Discovery RBAC configured: Teams can only discover their own targets."
 
-# 9. Synchronize .env
+# 9. Pre-create Users and LDAP Accounts to display actual names/emails in audit logs
+echo "Pre-creating Boundary Users and LDAP Accounts..."
+
+for USER_INFO in "alice|Alice Engineer|alice@comet.example" "bob|Bob Engineer|bob@comet.example" "chris|Chris Engineer|chris@comet.example"; do
+    LOGIN_NAME=$(echo "$USER_INFO" | cut -d'|' -f1)
+    FULLNAME=$(echo "$USER_INFO" | cut -d'|' -f2)
+    EMAIL=$(echo "$USER_INFO" | cut -d'|' -f3)
+
+    echo "Creating Boundary User for $LOGIN_NAME..."
+    # We create the user in the Org scope
+    USER_ID=$(curl -s -X POST \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"scope_id\": \"$ORG_ID\",
+            \"name\": \"$LOGIN_NAME\",
+            \"description\": \"$FULLNAME ($EMAIL)\"
+        }" \
+        "$BOUNDARY_ADDR/v1/users" | jq -r '.id')
+
+    echo "Creating LDAP Account for $LOGIN_NAME..."
+    ACCOUNT_ID=$(curl -s -X POST \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"auth_method_id\": \"$LDAP_AUTH_METHOD_ID\",
+            \"type\": \"ldap\",
+            \"name\": \"$LOGIN_NAME\",
+            \"attributes\": {
+                \"login_name\": \"$LOGIN_NAME\"
+            }
+        }" \
+        "$BOUNDARY_ADDR/v1/accounts" | jq -r '.id')
+
+    echo "Associating Account $ACCOUNT_ID with User $USER_ID..."
+    curl -s -X POST \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"account_ids\": [\"$ACCOUNT_ID\"],
+            \"version\": 1
+        }" \
+        "$BOUNDARY_ADDR/v1/users/$USER_ID:add-accounts" > /dev/null
+done
+
+# 10. Synchronize .env
 echo "Synchronizing .env..."
 cat <<EOF > .env
 BOUNDARY_ADDR=$BOUNDARY_ADDR
